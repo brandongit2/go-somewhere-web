@@ -12,11 +12,8 @@
 		"isolatedModules": true,
 		"jsx": "preserve",
 		"incremental": true,
-		"plugins": [
-			{
-				"name": "next"
-			}
-		],
+		"typeRoots": ["./node_modules/@types", "./node_modules/@webgpu/types"],
+		"plugins": [{"name": "next"}],
 		"paths": {
 			"@/*": ["./src/*"]
 		}
