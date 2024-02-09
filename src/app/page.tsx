@@ -14,11 +14,11 @@ export default function Root() {
 	useEffect(() => {
 		if (!device || !context || !presentationFormat) return
 		const module = device.createShaderModule({
-			label: `red triangle shaders`,
+			label: `rgb triangle shaders`,
 			code: shaders,
 		})
 		const pipeline = device.createRenderPipeline({
-			label: `red triangle pipeline`,
+			label: `rgb triangle pipeline`,
 			layout: `auto`,
 			vertex: {
 				module,
@@ -36,7 +36,7 @@ export default function Root() {
 	const render = useCallback(() => {
 		if (!device || !context || !pipeline) return
 
-		const encoder = device.createCommandEncoder({label: `our encoder`})
+		const encoder = device.createCommandEncoder({label: `encoder`})
 		const pass = encoder.beginRenderPass({
 			label: `render pass`,
 			colorAttachments: [

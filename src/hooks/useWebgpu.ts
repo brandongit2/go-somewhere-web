@@ -27,7 +27,13 @@ export const useWebgpu = (canvasRef: RefObject<HTMLCanvasElement>) => {
 			setAdapter(adapter)
 
 			const device = await adapter.requestDevice()
+			device.lost
+				.then((info) => {
+					throwError(new Error(`GPU lost. Info: ${info.message}`))
+				})
+				.catch(throwError)
 			setDevice(device)
+
 			const context = canvasRef.current.getContext(`webgpu`)
 			if (!context) throw new Error(`WebGPU not supported.`)
 			setContext(context)
