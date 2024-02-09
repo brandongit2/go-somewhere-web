@@ -14,8 +14,8 @@ type RootLayoutProps = Readonly<{
 
 export default function RootLayout({children}: RootLayoutProps) {
 	return (
-		<html lang="en">
-			<body>{children}</body>
+		<html lang="en" className="h-full">
+			<body className="min-h-full">{children}</body>
 		</html>
 	)
 }
