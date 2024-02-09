@@ -1,19 +1,8 @@
 module.exports = {
-	extends: [`eslint:recommended`, `plugin:import/recommended`, `next/core-web-vitals`],
-	plugins: [`import`],
-	env: {
-		es6: true,
-		node: true,
-	},
-	settings: {
-		react: {
-			version: `detect`,
-		},
-	},
+	root: true,
+	extends: [`eslint:recommended`, `plugin:import/recommended`, `next/core-web-vitals`, `next`],
 	rules: {
 		"import/no-duplicates": `error`,
-		"import/no-named-as-default": `off`,
-		"import/no-unresolved": `off`,
 		"import/order": [
 			`warn`,
 			{
@@ -29,10 +18,9 @@ module.exports = {
 				warnOnUnassignedImports: true,
 			},
 		],
-		"prefer-const": `off`,
+		"@next/next/no-assign-module-variable": `off`,
 		"no-console": [`warn`, {allow: [`info`, `warn`, `error`]}],
 		"no-constant-condition": [`error`, {checkLoops: false}],
-		"no-control-regex": `off`,
 		"no-debugger": `warn`,
 		"no-empty": [`warn`, {allowEmptyCatch: true}],
 		"no-mixed-spaces-and-tabs": [`warn`, `smart-tabs`],
@@ -42,22 +30,19 @@ module.exports = {
 	overrides: [
 		{
 			files: [`**/*.ts`, `**/*.tsx`],
-			parser: `@typescript-eslint/parser`,
-			parserOptions: {
-				project: `./tsconfig.json`,
-			},
 			plugins: [`@typescript-eslint`],
-			extends: `plugin:@typescript-eslint/recommended`,
+			parserOptions: {
+				project: true,
+				tsconfigRootDir: __dirname,
+			},
+			extends: [
+				`plugin:@typescript-eslint/recommended-type-checked`,
+				`plugin:@typescript-eslint/stylistic-type-checked`,
+			],
 			rules: {
-				"@typescript-eslint/ban-ts-comment": `off`,
 				"@typescript-eslint/consistent-type-imports": `warn`,
-				"@typescript-eslint/explicit-module-boundary-types": `off`,
-				"@typescript-eslint/no-empty-function": `off`,
-				"@typescript-eslint/no-explicit-any": `off`,
-				"@typescript-eslint/no-non-null-assertion": `off`,
 				"@typescript-eslint/no-unnecessary-condition": `warn`,
 				"@typescript-eslint/no-unused-vars": [`warn`, {ignoreRestSiblings: true}],
-				"@typescript-eslint/no-var-requires": `off`,
 				"@typescript-eslint/quotes": [`warn`, `backtick`],
 				"prefer-const": `off`,
 				quotes: `off`,
@@ -65,8 +50,7 @@ module.exports = {
 		},
 		{
 			files: [`**/*.jsx`, `**/*.tsx`],
-			plugins: [`react`],
-			extends: [`plugin:react/recommended`, `plugin:react/jsx-runtime`],
+			extends: [`plugin:react/jsx-runtime`],
 			rules: {
 				"react/button-has-type": `warn`,
 				"react/display-name": `warn`,
@@ -75,9 +59,6 @@ module.exports = {
 				"react/jsx-no-useless-fragment": [`warn`, {allowExpressions: true}],
 				"react/no-unescaped-entities": `warn`,
 				"react/no-unused-prop-types": `warn`,
-				"react/no-unknown-property": `off`,
-				"react/prop-types": `off`,
-				"react/self-closing-comp": `off`,
 			},
 		},
 	],

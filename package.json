@@ -1,5 +1,5 @@
 {
-  "name": "go-somewhere",
+	"name": "go-somewhere-web",
   "private": true,
   "type": "module",
   "scripts": {
@@ -22,8 +22,6 @@
     "eslint": "8.56.0",
     "eslint-config-next": "14.1.0",
     "eslint-plugin-import": "2.29.1",
-    "eslint-plugin-react": "7.33.2",
-    "eslint-plugin-react-hooks": "4.6.0",
     "postcss": "8.4.35",
     "postcss-load-config": "5.0.2",
     "prettier-plugin-tailwindcss": "0.5.11",
