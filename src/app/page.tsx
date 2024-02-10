@@ -34,7 +34,7 @@ export default function Root() {
 	}, [context, device, presentationFormat])
 
 	const render = useCallback(() => {
-		if (!device || !context || !pipeline) return
+		if (!device || !context || !pipeline || !canvasRef.current) return
 
 		const encoder = device.createCommandEncoder({label: `encoder`})
 		const pass = encoder.beginRenderPass({
@@ -49,7 +49,41 @@ export default function Root() {
 			],
 		})
 		pass.setPipeline(pipeline)
-		pass.draw(3)
+
+		const aspect = canvasRef.current.width / canvasRef.current.height
+
+		const colorSize = 4
+		const scaleSize = 2
+		const translateSize = 2
+		const colorOffset = 0
+		const scaleOffset = colorOffset + colorSize
+		const translateOffset = scaleOffset + scaleSize
+		const uniformBufferSize = (colorSize + scaleSize + translateSize) * 4
+
+		const uniformValues = new Float32Array(uniformBufferSize / 4)
+		const numObjects = 100
+		for (let i = 0; i < numObjects; i++) {
+			const uniformBuffer = device.createBuffer({
+				label: `uniforms for obj: ${i}`,
+				size: uniformBufferSize,
+				usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+			})
+
+			const scale = rand(0.2, 0.5)
+			uniformValues.set([rand(0, 1), rand(0, 1), rand(0, 1), 1], colorOffset)
+			uniformValues.set([scale / aspect, scale], scaleOffset)
+			uniformValues.set([rand(-0.9, 0.9), rand(-0.9, 0.9)], translateOffset)
+
+			const bindGroup = device.createBindGroup({
+				label: `bind group for obj: ${i}`,
+				layout: pipeline.getBindGroupLayout(0),
+				entries: [{binding: 0, resource: {buffer: uniformBuffer}}],
+			})
+
+			device.queue.writeBuffer(uniformBuffer, 0, uniformValues)
+			pass.setBindGroup(0, bindGroup)
+			pass.draw(3)
+		}
 		pass.end()
 
 		const commandBuffer = encoder.finish()
@@ -75,3 +109,5 @@ export default function Root() {
 
 	return <canvas ref={canvasRef} className="absolute left-0 top-0 h-full w-full" />
 }
+
+const rand = (min: number, max: number) => min + Math.random() * (max - min)
