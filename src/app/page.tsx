@@ -1,8 +1,9 @@
 "use client"
 
 import {useQuery} from "@tanstack/react-query"
+import earcut from "earcut"
 import Pbf from "pbf"
-import {useCallback, useEffect, useRef, useState} from "react"
+import {useCallback, useEffect, useMemo, useRef, useState} from "react"
 import invariant from "tiny-invariant"
 import wretch from "wretch"
 // eslint-disable-next-line import/no-named-as-default -- `QueryStringAddon` in this import is an interface, not what we want
@@ -14,9 +15,90 @@ import {useWebgpu} from "@/hooks/useWebgpu"
 import {Tile} from "@/mvt"
 
 export default function Root() {
+	const {data} = useQuery({
+		queryKey: [`map`],
+		queryFn: async () =>
+			await wretch(`https://api.mapbox.com/v4/mapbox.mapbox-streets-v8/0/0/0.mvt`)
+				.addon(QueryStringAddon)
+				.query({access_token: MAPBOX_ACCESS_TOKEN})
+				.get()
+				.arrayBuffer(),
+	})
+	const shapes = useMemo(() => {
+		if (!data) return
+		const pbf = new Pbf(data)
+		const tile = Tile.read(pbf)
+
+		const waterLayer = tile.layers?.find((layer) => layer.name === `water`)
+		if (!waterLayer) return
+
+		const shapes: number[][][] = []
+		let shapeDraft: number[][] = []
+		for (const feature of waterLayer.features ?? []) {
+			const geometry = feature.geometry
+			if (!geometry) continue
+
+			let integerType: "command" | "parameter" = `command`
+			let commandType: number | null = null
+			let commandsLeft = 0
+			let cursor: [number, number] = [0, 0]
+			let geometryDraft: number[] = []
+			for (let i = 0; i < geometry.length; i++) {
+				const integer = geometry[i]
+
+				switch (integerType) {
+					case `command`: {
+						commandType = integer & 0x7
+						const commandCount = integer >> 3
+						commandsLeft = commandCount
+
+						if (commandType === commandTypes.closePath) {
+							const area = calculatePolygonArea(geometryDraft)
+							if (shapeDraft.length === 0 || area < 0) shapeDraft.push(geometryDraft)
+							else {
+								shapes.push(shapeDraft)
+								shapeDraft = [geometryDraft]
+							}
+							geometryDraft = []
+						} else integerType = `parameter`
+
+						break
+					}
+					case `parameter`: {
+						switch (commandType) {
+							case commandTypes.moveTo: {
+								const x = cursor[0] + decodeParameterInteger(integer)
+								const y = cursor[1] + decodeParameterInteger(geometry[i + 1])
+								geometryDraft.push(x / waterLayer.extent, y / waterLayer.extent)
+								cursor = [x, y]
+								i++
+								break
+							}
+							case commandTypes.lineTo: {
+								const x = cursor[0] + decodeParameterInteger(integer)
+								const y = cursor[1] + decodeParameterInteger(geometry[i + 1])
+								geometryDraft.push(x / waterLayer.extent, y / waterLayer.extent)
+								cursor = [x, y]
+								i++
+								break
+							}
+						}
+
+						commandsLeft--
+					}
+				}
+
+				if (commandsLeft === 0) integerType = `command`
+			}
+		}
+
+		return shapes
+	}, [data])
+
 	const canvasRef = useRef<HTMLCanvasElement>(null)
 	const {device, context, presentationFormat} = useWebgpu(canvasRef)
 
+	// Create the pipeline
 	const [pipeline, setPipeline] = useState<GPURenderPipeline>()
 	useEffect(() => {
 		if (!device || !context || !presentationFormat) return
@@ -30,6 +112,12 @@ export default function Root() {
 			vertex: {
 				module,
 				entryPoint: `vs`,
+				buffers: [
+					{
+						arrayStride: 2 * 4,
+						attributes: [{shaderLocation: 0, offset: 0, format: `float32x2` as const}],
+					},
+				],
 			},
 			fragment: {
 				module,
@@ -41,7 +129,7 @@ export default function Root() {
 	}, [context, device, presentationFormat])
 
 	const render = useCallback(() => {
-		if (!device || !context || !pipeline || !canvasRef.current) return
+		if (!device || !context || !pipeline || !canvasRef.current || !shapes) return
 
 		const encoder = device.createCommandEncoder({label: `encoder`})
 		const pass = encoder.beginRenderPass({
@@ -59,57 +147,51 @@ export default function Root() {
 
 		const aspect = canvasRef.current.width / canvasRef.current.height
 
-		const numObjects = 100
-		const colorSize = 4
-		const scaleSize = 2
-		const translateSize = 2
-		const colorOffset = 0
-		const scaleOffset = colorOffset + colorSize
-		const translateOffset = scaleOffset + scaleSize
-		const variantSize = colorSize + scaleSize + translateSize
-		const variantsBufferSize = variantSize * numObjects
+		let shapesWithHoles = shapes.map((shape) => {
+			let geometries = shape.flat()
+			if (shape.length === 1) return {geometries, holeIndices: undefined}
 
-		const variantsBufferValues = new Float32Array(variantsBufferSize)
-		const variantsBuffer = device.createBuffer({
-			label: `variants buffer`,
-			size: variantsBufferSize * 4,
-			usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+			let holeIndices: number[] = []
+			let i = 0
+			for (const geometry of shape.slice(0, -1)) {
+				i += geometry.length / 2
+				holeIndices.push(i)
+			}
+
+			return {geometries, holeIndices}
 		})
-		for (let i = 0; i < numObjects; i++) {
-			const scale = rand(0.2, 0.5)
-			variantsBufferValues.set([rand(0, 1), rand(0, 1), rand(0, 1), 1], i * variantSize + colorOffset)
-			variantsBufferValues.set([scale / aspect, scale], i * variantSize + scaleOffset)
-			variantsBufferValues.set([rand(-0.9, 0.9), rand(-0.9, 0.9)], i * variantSize + translateOffset)
+
+		for (let i = 0; i < shapesWithHoles.length; i++) {
+			const vertices = shapesWithHoles[i].geometries.map((coord, i) => (i % 2 === 0 ? coord / aspect : 1 - coord))
+			const indices = earcut(shapesWithHoles[i].geometries, shapesWithHoles[i].holeIndices)
+
+			const vertexData = new Float32Array(vertices)
+			const vertexBuffer = device.createBuffer({
+				label: `vertex buffer: shape ${i}`,
+				size: vertexData.byteLength,
+				usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
+			})
+			device.queue.writeBuffer(vertexBuffer, 0, vertexData)
+
+			const indexData = new Uint32Array(indices)
+			const indexBuffer = device.createBuffer({
+				label: `index buffer: shape ${i}`,
+				size: indexData.byteLength,
+				usage: GPUBufferUsage.INDEX | GPUBufferUsage.COPY_DST,
+			})
+			device.queue.writeBuffer(indexBuffer, 0, indexData)
+
+			pass.setVertexBuffer(0, vertexBuffer)
+			pass.setIndexBuffer(indexBuffer, `uint32`)
+			pass.drawIndexed(indices.length)
 		}
-		device.queue.writeBuffer(variantsBuffer, 0, variantsBufferValues)
-
-		const {vertexData, numVertices} = createCircleVertices({
-			radius: 0.5,
-			innerRadius: 0.25,
-		})
-		const vertexBuffer = device.createBuffer({
-			label: `vertex buffer`,
-			size: numVertices * 2 * 4,
-			usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
-		})
-		device.queue.writeBuffer(vertexBuffer, 0, vertexData)
-
-		const bindGroup = device.createBindGroup({
-			label: `bind group`,
-			layout: pipeline.getBindGroupLayout(0),
-			entries: [
-				{binding: 0, resource: {buffer: variantsBuffer}},
-				{binding: 1, resource: {buffer: vertexBuffer}},
-			],
-		})
-		pass.setBindGroup(0, bindGroup)
-		pass.draw(numVertices, numObjects)
 		pass.end()
 
 		const commandBuffer = encoder.finish()
 		device.queue.submit([commandBuffer])
-	}, [context, device, pipeline])
+	}, [context, device, pipeline, shapes])
 
+	// Keep canvas size in sync with the display size
 	useEffect(() => {
 		const onResize = () => {
 			if (!device) return
@@ -127,68 +209,31 @@ export default function Root() {
 		return () => window.removeEventListener(`resize`, onResize)
 	}, [device, render])
 
-	const {data} = useQuery({
-		queryKey: [`map`],
-		queryFn: async () =>
-			await wretch(`https://api.mapbox.com/v4/mapbox.mapbox-streets-v8/1/0/0.mvt`)
-				.addon(QueryStringAddon)
-				.query({access_token: MAPBOX_ACCESS_TOKEN})
-				.get()
-				.arrayBuffer(),
-	})
-	const pbf = new Pbf(data)
-	console.log(Tile.read(pbf))
-
 	return <canvas ref={canvasRef} className="absolute left-0 top-0 h-full w-full" />
 }
 
-const rand = (min: number, max: number) => min + Math.random() * (max - min)
+const commandTypes = {
+	moveTo: 1,
+	lineTo: 2,
+	closePath: 7,
+}
 
-const createCircleVertices = ({
-	radius = 1,
-	numSubdivisions = 24,
-	innerRadius = 0,
-	startAngle = 0,
-	endAngle = Math.PI * 2,
-} = {}) => {
-	// 2 triangles per subdivision, 3 verts per tri, 2 values (xy) each.
-	const numVertices = numSubdivisions * 3 * 2
-	const vertexData = new Float32Array(numSubdivisions * 2 * 3 * 2)
+const decodeParameterInteger = (integer: number) => (integer >> 1) ^ -(integer & 1)
 
-	let offset = 0
-	const addVertex = (x: number, y: number) => {
-		vertexData[offset++] = x
-		vertexData[offset++] = y
+const calculatePolygonArea = (vertices: number[]) => {
+	let area = 0
+	const n = vertices.length / 2
+
+	for (let i = 0; i < n; i++) {
+		const j = (i + 1) % n // Next vertex index, wrapping around to 0 at the end
+
+		const xi = vertices[i * 2]
+		const yi = vertices[i * 2 + 1]
+		const xj = vertices[j * 2]
+		const yj = vertices[j * 2 + 1]
+
+		area += xi * yj - xj * yi
 	}
 
-	// 2 triangles per subdivision
-	//
-	// 0--1 4
-	// | / /|
-	// |/ / |
-	// 2 3--5
-	for (let i = 0; i < numSubdivisions; ++i) {
-		const angle1 = startAngle + ((i + 0) * (endAngle - startAngle)) / numSubdivisions
-		const angle2 = startAngle + ((i + 1) * (endAngle - startAngle)) / numSubdivisions
-
-		const c1 = Math.cos(angle1)
-		const s1 = Math.sin(angle1)
-		const c2 = Math.cos(angle2)
-		const s2 = Math.sin(angle2)
-
-		// first triangle
-		addVertex(c1 * radius, s1 * radius)
-		addVertex(c2 * radius, s2 * radius)
-		addVertex(c1 * innerRadius, s1 * innerRadius)
-
-		// second triangle
-		addVertex(c1 * innerRadius, s1 * innerRadius)
-		addVertex(c2 * radius, s2 * radius)
-		addVertex(c2 * innerRadius, s2 * innerRadius)
-	}
-
-	return {
-		vertexData,
-		numVertices,
-	}
+	return area / 2
 }

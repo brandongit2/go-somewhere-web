@@ -1,29 +1,8 @@
-struct Variant {
-	color:  vec4f,
-	scale:  vec2f,
-	offset: vec2f,
-};
-
-@group(0) @binding(0) var<storage> variants: array<Variant>;
-@group(0) @binding(1) var<storage> pos:      array<vec2f>;
-
-struct VsOutput {
-	@builtin(position) position: vec4f,
-	@location(0)       color:    vec4f,
-};
-
-@vertex fn vs(
-	@builtin(vertex_index)   vertexIndex:   u32,
-	@builtin(instance_index) instanceIndex: u32,
-) -> VsOutput {
-	let variant = variants[instanceIndex];
-	var output = VsOutput(
-		vec4f(pos[vertexIndex] * variant.scale + variant.offset, 0.0, 1.0),
-		variant.color,
-	);
-	return output;
+@vertex fn vs(@location(0) vertex: vec2f) -> @builtin(position) vec4f {
+	let flatPos = vertex * vec2f(2.0, 2.0) - vec2f(1.0, 1.0);
+	return vec4f(flatPos, 0.0, 1.0);
 }
 
-@fragment fn fs(vsOutput: VsOutput) -> @location(0) vec4f {
-	return vsOutput.color;
+@fragment fn fs() -> @location(0) vec4f {
+	return vec4f(0.0, 0.0, 1.0, 1.0);
 }
