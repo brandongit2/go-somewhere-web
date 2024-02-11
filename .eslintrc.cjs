@@ -1,6 +1,12 @@
 module.exports = {
 	root: true,
-	extends: [`eslint:recommended`, `plugin:import/recommended`, `next/core-web-vitals`, `next`],
+	extends: [
+		`eslint:recommended`,
+		`plugin:import/recommended`,
+		`next/core-web-vitals`,
+		`next`,
+		`plugin:@tanstack/eslint-plugin-query/recommended`,
+	],
 	rules: {
 		"import/no-duplicates": `error`,
 		"import/order": [

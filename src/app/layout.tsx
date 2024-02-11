@@ -2,6 +2,7 @@ import type {Metadata} from "next"
 import type {ReactNode} from "react"
 
 import "./globals.css"
+import {Providers} from "./Providers"
 
 export const metadata: Metadata = {
 	title: `go somewhere... anywhere.`,
@@ -15,7 +16,9 @@ type RootLayoutProps = Readonly<{
 export default function RootLayout({children}: RootLayoutProps) {
 	return (
 		<html lang="en" className="h-full">
-			<body className="min-h-full">{children}</body>
+			<body className="min-h-full">
+				<Providers>{children}</Providers>
+			</body>
 		</html>
 	)
 }

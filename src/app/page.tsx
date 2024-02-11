@@ -1,10 +1,17 @@
 "use client"
 
+import {useQuery} from "@tanstack/react-query"
+import Pbf from "pbf"
 import {useCallback, useEffect, useRef, useState} from "react"
 import invariant from "tiny-invariant"
+import wretch from "wretch"
+// eslint-disable-next-line import/no-named-as-default -- `QueryStringAddon` in this import is an interface, not what we want
+import QueryStringAddon from "wretch/addons/queryString"
 
 import shaders from "./shaders.wgsl"
+import {MAPBOX_ACCESS_TOKEN} from "@/env"
 import {useWebgpu} from "@/hooks/useWebgpu"
+import {Tile} from "@/mvt"
 
 export default function Root() {
 	const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -119,6 +126,18 @@ export default function Root() {
 		onResize()
 		return () => window.removeEventListener(`resize`, onResize)
 	}, [device, render])
+
+	const {data} = useQuery({
+		queryKey: [`map`],
+		queryFn: async () =>
+			await wretch(`https://api.mapbox.com/v4/mapbox.mapbox-streets-v8/1/0/0.mvt`)
+				.addon(QueryStringAddon)
+				.query({access_token: MAPBOX_ACCESS_TOKEN})
+				.get()
+				.arrayBuffer(),
+	})
+	const pbf = new Pbf(data)
+	console.log(Tile.read(pbf))
 
 	return <canvas ref={canvasRef} className="absolute left-0 top-0 h-full w-full" />
 }
