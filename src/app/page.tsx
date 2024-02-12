@@ -1,7 +1,6 @@
 "use client"
 
 import {useQuery} from "@tanstack/react-query"
-import earcut from "earcut"
 import Pbf from "pbf"
 import {useCallback, useEffect, useMemo, useRef, useState} from "react"
 import invariant from "tiny-invariant"
@@ -13,17 +12,23 @@ import shaders from "./shaders.wgsl"
 import {MAPBOX_ACCESS_TOKEN} from "@/env"
 import {useWebgpu} from "@/hooks/useWebgpu"
 import {Tile} from "@/mvt"
+import {parsePolygonGeometry, type Shape} from "@/parsePolygonGeometry"
+
+const zoom = 0
+const tileX = 0
+const tileY = 0
 
 export default function Root() {
 	const {data} = useQuery({
-		queryKey: [`map`],
+		queryKey: [`vectortile-${zoom}/${tileX}/${tileY}`],
 		queryFn: async () =>
-			await wretch(`https://api.mapbox.com/v4/mapbox.mapbox-streets-v8/0/0/0.mvt`)
+			await wretch(`https://api.mapbox.com/v4/mapbox.mapbox-streets-v8/${zoom}/${tileX}/${tileY}.mvt`)
 				.addon(QueryStringAddon)
 				.query({access_token: MAPBOX_ACCESS_TOKEN})
 				.get()
 				.arrayBuffer(),
 	})
+
 	const shapes = useMemo(() => {
 		if (!data) return
 		const pbf = new Pbf(data)
@@ -32,64 +37,12 @@ export default function Root() {
 		const waterLayer = tile.layers?.find((layer) => layer.name === `water`)
 		if (!waterLayer) return
 
-		const shapes: number[][][] = []
-		let shapeDraft: number[][] = []
+		let shapes: Shape[] = []
 		for (const feature of waterLayer.features ?? []) {
 			const geometry = feature.geometry
 			if (!geometry) continue
 
-			let integerType: "command" | "parameter" = `command`
-			let commandType: number | null = null
-			let commandsLeft = 0
-			let cursor: [number, number] = [0, 0]
-			let geometryDraft: number[] = []
-			for (let i = 0; i < geometry.length; i++) {
-				const integer = geometry[i]
-
-				switch (integerType) {
-					case `command`: {
-						commandType = integer & 0x7
-						const commandCount = integer >> 3
-						commandsLeft = commandCount
-
-						if (commandType === commandTypes.closePath) {
-							const area = calculatePolygonArea(geometryDraft)
-							if (shapeDraft.length === 0 || area < 0) shapeDraft.push(geometryDraft)
-							else {
-								shapes.push(shapeDraft)
-								shapeDraft = [geometryDraft]
-							}
-							geometryDraft = []
-						} else integerType = `parameter`
-
-						break
-					}
-					case `parameter`: {
-						switch (commandType) {
-							case commandTypes.moveTo: {
-								const x = cursor[0] + decodeParameterInteger(integer)
-								const y = cursor[1] + decodeParameterInteger(geometry[i + 1])
-								geometryDraft.push(x / waterLayer.extent, y / waterLayer.extent)
-								cursor = [x, y]
-								i++
-								break
-							}
-							case commandTypes.lineTo: {
-								const x = cursor[0] + decodeParameterInteger(integer)
-								const y = cursor[1] + decodeParameterInteger(geometry[i + 1])
-								geometryDraft.push(x / waterLayer.extent, y / waterLayer.extent)
-								cursor = [x, y]
-								i++
-								break
-							}
-						}
-
-						commandsLeft--
-					}
-				}
-
-				if (commandsLeft === 0) integerType = `command`
-			}
+			shapes = parsePolygonGeometry(geometry, waterLayer.extent)
 		}
 
 		return shapes
@@ -129,7 +82,7 @@ export default function Root() {
 	}, [context, device, presentationFormat])
 
 	const render = useCallback(() => {
-		if (!device || !context || !pipeline || !canvasRef.current || !shapes) return
+		if (!device || !context || !pipeline || !shapes) return
 
 		const encoder = device.createCommandEncoder({label: `encoder`})
 		const pass = encoder.beginRenderPass({
@@ -137,7 +90,7 @@ export default function Root() {
 			colorAttachments: [
 				{
 					view: context.getCurrentTexture().createView(),
-					clearValue: [0.3, 0.3, 0.3, 1],
+					clearValue: [0, 1, 0, 1],
 					loadOp: `clear` as const,
 					storeOp: `store` as const,
 				},
@@ -145,27 +98,10 @@ export default function Root() {
 		})
 		pass.setPipeline(pipeline)
 
-		const aspect = canvasRef.current.width / canvasRef.current.height
+		for (let i = 0; i < shapes.length; i++) {
+			const shape = shapes[i]
 
-		let shapesWithHoles = shapes.map((shape) => {
-			let geometries = shape.flat()
-			if (shape.length === 1) return {geometries, holeIndices: undefined}
-
-			let holeIndices: number[] = []
-			let i = 0
-			for (const geometry of shape.slice(0, -1)) {
-				i += geometry.length / 2
-				holeIndices.push(i)
-			}
-
-			return {geometries, holeIndices}
-		})
-
-		for (let i = 0; i < shapesWithHoles.length; i++) {
-			const vertices = shapesWithHoles[i].geometries.map((coord, i) => (i % 2 === 0 ? coord / aspect : 1 - coord))
-			const indices = earcut(shapesWithHoles[i].geometries, shapesWithHoles[i].holeIndices)
-
-			const vertexData = new Float32Array(vertices)
+			const vertexData = new Float32Array(shape.vertices)
 			const vertexBuffer = device.createBuffer({
 				label: `vertex buffer: shape ${i}`,
 				size: vertexData.byteLength,
@@ -173,7 +109,7 @@ export default function Root() {
 			})
 			device.queue.writeBuffer(vertexBuffer, 0, vertexData)
 
-			const indexData = new Uint32Array(indices)
+			const indexData = new Uint32Array(shape.indices)
 			const indexBuffer = device.createBuffer({
 				label: `index buffer: shape ${i}`,
 				size: indexData.byteLength,
@@ -183,7 +119,7 @@ export default function Root() {
 
 			pass.setVertexBuffer(0, vertexBuffer)
 			pass.setIndexBuffer(indexBuffer, `uint32`)
-			pass.drawIndexed(indices.length)
+			pass.drawIndexed(shape.indices.length)
 		}
 		pass.end()
 
@@ -191,7 +127,7 @@ export default function Root() {
 		device.queue.submit([commandBuffer])
 	}, [context, device, pipeline, shapes])
 
-	// Keep canvas size in sync with the display size
+	// Keep canvas size in sync with display size
 	useEffect(() => {
 		const onResize = () => {
 			if (!device) return
@@ -210,30 +146,4 @@ export default function Root() {
 	}, [device, render])
 
 	return <canvas ref={canvasRef} className="absolute left-0 top-0 h-full w-full" />
-}
-
-const commandTypes = {
-	moveTo: 1,
-	lineTo: 2,
-	closePath: 7,
-}
-
-const decodeParameterInteger = (integer: number) => (integer >> 1) ^ -(integer & 1)
-
-const calculatePolygonArea = (vertices: number[]) => {
-	let area = 0
-	const n = vertices.length / 2
-
-	for (let i = 0; i < n; i++) {
-		const j = (i + 1) % n // Next vertex index, wrapping around to 0 at the end
-
-		const xi = vertices[i * 2]
-		const yi = vertices[i * 2 + 1]
-		const xj = vertices[j * 2]
-		const yj = vertices[j * 2 + 1]
-
-		area += xi * yj - xj * yi
-	}
-
-	return area / 2
 }
