@@ -1,6 +1,8 @@
 import earcut from "earcut"
 
-export type Shape = {
+import {commandTypes, decodeParameterInteger} from "./util"
+
+export type Polygon = {
 	vertices: number[]
 	indices: number[]
 }
@@ -10,8 +12,8 @@ export const parsePolygonGeometry = (geometry: number[], extent: number) => {
 	let commandType: number | null = null
 	let commandsLeft = 0
 	let cursor: [number, number] = [0, 0]
-	let shapes: Shape[] = []
-	let shapeDraft: number[][] = []
+	let polygons: Polygon[] = []
+	let polygonDraft: number[][] = []
 	let geometryDraft: number[] = []
 	for (let i = 0; i < geometry.length; i++) {
 		const integer = geometry[i]
@@ -25,21 +27,21 @@ export const parsePolygonGeometry = (geometry: number[], extent: number) => {
 				if (commandType === commandTypes.closePath) {
 					const area = calculatePolygonArea(geometryDraft)
 
-					if (shapeDraft.length === 0 || area < 0) shapeDraft.push(geometryDraft)
+					if (polygonDraft.length === 0 || area < 0) polygonDraft.push(geometryDraft)
 					else {
 						let holeIndices = []
 						let i = 0
-						for (const geometry of shapeDraft.slice(0, -1)) {
+						for (const geometry of polygonDraft.slice(0, -1)) {
 							i += geometry.length / 2
 							holeIndices.push(i)
 						}
 
-						shapes.push({
-							vertices: shapeDraft.flat(),
-							indices: earcut(shapeDraft.flat(), holeIndices),
+						polygons.push({
+							vertices: polygonDraft.flat(),
+							indices: earcut(polygonDraft.flat(), holeIndices),
 						})
 
-						shapeDraft = [geometryDraft]
+						polygonDraft = [geometryDraft]
 					}
 
 					geometryDraft = []
@@ -61,19 +63,11 @@ export const parsePolygonGeometry = (geometry: number[], extent: number) => {
 		if (commandsLeft === 0) integerType = `command`
 	}
 
-	return shapes.map((shape) => ({
-		vertices: shape.vertices.map((vertex, i) => (i % 2 === 0 ? vertex : 1 - vertex)),
-		indices: shape.indices,
+	return polygons.map((polygon) => ({
+		vertices: polygon.vertices.map((vertex, i) => (i % 2 === 0 ? vertex : 1 - vertex)),
+		indices: polygon.indices,
 	}))
 }
-
-const commandTypes = {
-	moveTo: 1,
-	lineTo: 2,
-	closePath: 7,
-}
-
-const decodeParameterInteger = (integer: number) => (integer >> 1) ^ -(integer & 1)
 
 const calculatePolygonArea = (vertices: number[]) => {
 	let area = 0

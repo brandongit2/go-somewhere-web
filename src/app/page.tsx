@@ -2,7 +2,7 @@
 
 import {useQuery} from "@tanstack/react-query"
 import Pbf from "pbf"
-import {useCallback, useEffect, useMemo, useRef, useState} from "react"
+import {useCallback, useEffect, useMemo, useRef} from "react"
 import invariant from "tiny-invariant"
 import wretch from "wretch"
 // eslint-disable-next-line import/no-named-as-default -- `QueryStringAddon` in this import is an interface, not what we want
@@ -10,9 +10,10 @@ import QueryStringAddon from "wretch/addons/queryString"
 
 import shaders from "./shaders.wgsl"
 import {MAPBOX_ACCESS_TOKEN} from "@/env"
-import {useWebgpu} from "@/hooks/useWebgpu"
-import {Tile} from "@/mvt"
-import {parsePolygonGeometry, type Shape} from "@/parsePolygonGeometry"
+import {useWebgpu} from "@/hooks/use-webgpu"
+import {Tile} from "@/mvt/generated"
+import {parseLineStringGeometry} from "@/mvt/parse-linestring-geometry"
+import {parsePolygonGeometry, type Polygon} from "@/mvt/parse-polygon-geometry"
 
 const zoom = 0
 const tileX = 0
@@ -29,38 +30,61 @@ export default function Root() {
 				.arrayBuffer(),
 	})
 
-	const shapes = useMemo(() => {
+	const tile = useMemo(() => {
 		if (!data) return
 		const pbf = new Pbf(data)
 		const tile = Tile.read(pbf)
+		return tile
+	}, [data])
+
+	const linestrings = useMemo(() => {
+		if (!tile) return
+
+		const adminLayer = tile.layers?.find((layer) => layer.name === `admin`)
+		if (!adminLayer) return
+
+		let linestrings: number[][] = []
+		for (const feature of adminLayer.features ?? []) {
+			const geometry = feature.geometry
+			if (!geometry) continue
+
+			linestrings = linestrings.concat(parseLineStringGeometry(geometry, adminLayer.extent))
+		}
+
+		return linestrings
+	}, [tile])
+	console.log(linestrings)
+
+	const polygons = useMemo(() => {
+		if (!tile) return
 
 		const waterLayer = tile.layers?.find((layer) => layer.name === `water`)
 		if (!waterLayer) return
 
-		let shapes: Shape[] = []
+		let polygons: Polygon[] = []
 		for (const feature of waterLayer.features ?? []) {
 			const geometry = feature.geometry
 			if (!geometry) continue
 
-			shapes = parsePolygonGeometry(geometry, waterLayer.extent)
+			polygons = parsePolygonGeometry(geometry, waterLayer.extent)
 		}
 
-		return shapes
-	}, [data])
+		return polygons
+	}, [tile])
 
 	const canvasRef = useRef<HTMLCanvasElement>(null)
 	const {device, context, presentationFormat} = useWebgpu(canvasRef)
 
 	// Create the pipeline
-	const [pipeline, setPipeline] = useState<GPURenderPipeline>()
-	useEffect(() => {
+	const pipeline = useMemo(() => {
 		if (!device || !context || !presentationFormat) return
+
 		const module = device.createShaderModule({
-			label: `rgb triangle shaders`,
+			label: `shaders`,
 			code: shaders,
 		})
 		const pipeline = device.createRenderPipeline({
-			label: `rgb triangle pipeline`,
+			label: `pipeline`,
 			layout: `auto`,
 			vertex: {
 				module,
@@ -78,11 +102,12 @@ export default function Root() {
 				targets: [{format: presentationFormat}],
 			},
 		})
-		setPipeline(pipeline)
+
+		return pipeline
 	}, [context, device, presentationFormat])
 
 	const render = useCallback(() => {
-		if (!device || !context || !pipeline || !shapes) return
+		if (!device || !context || !pipeline || !polygons) return
 
 		const encoder = device.createCommandEncoder({label: `encoder`})
 		const pass = encoder.beginRenderPass({
@@ -98,20 +123,20 @@ export default function Root() {
 		})
 		pass.setPipeline(pipeline)
 
-		for (let i = 0; i < shapes.length; i++) {
-			const shape = shapes[i]
+		for (let i = 0; i < polygons.length; i++) {
+			const polygon = polygons[i]
 
-			const vertexData = new Float32Array(shape.vertices)
+			const vertexData = new Float32Array(polygon.vertices)
 			const vertexBuffer = device.createBuffer({
-				label: `vertex buffer: shape ${i}`,
+				label: `vertex buffer: polygon ${i}`,
 				size: vertexData.byteLength,
 				usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
 			})
 			device.queue.writeBuffer(vertexBuffer, 0, vertexData)
 
-			const indexData = new Uint32Array(shape.indices)
+			const indexData = new Uint32Array(polygon.indices)
 			const indexBuffer = device.createBuffer({
-				label: `index buffer: shape ${i}`,
+				label: `index buffer: polygon ${i}`,
 				size: indexData.byteLength,
 				usage: GPUBufferUsage.INDEX | GPUBufferUsage.COPY_DST,
 			})
@@ -119,13 +144,13 @@ export default function Root() {
 
 			pass.setVertexBuffer(0, vertexBuffer)
 			pass.setIndexBuffer(indexBuffer, `uint32`)
-			pass.drawIndexed(shape.indices.length)
+			pass.drawIndexed(polygon.indices.length)
 		}
 		pass.end()
 
 		const commandBuffer = encoder.finish()
 		device.queue.submit([commandBuffer])
-	}, [context, device, pipeline, shapes])
+	}, [context, device, pipeline, polygons])
 
 	// Keep canvas size in sync with display size
 	useEffect(() => {
