@@ -15,9 +15,9 @@ import {Tile} from "@/mvt/generated"
 import {parseLineStringGeometry} from "@/mvt/parse-linestring-geometry"
 import {parsePolygonGeometry, type Polygon} from "@/mvt/parse-polygon-geometry"
 
-const zoom = 0
-const tileX = 0
-const tileY = 0
+const zoom = 3
+const tileX = 2
+const tileY = 2
 
 export default function Root() {
 	const {data} = useQuery({
@@ -43,7 +43,7 @@ export default function Root() {
 		const adminLayer = tile.layers?.find((layer) => layer.name === `admin`)
 		if (!adminLayer) return
 
-		let linestrings: number[][] = []
+		let linestrings: {vertices: number[]; indices: number[]}[] = []
 		for (const feature of adminLayer.features ?? []) {
 			const geometry = feature.geometry
 			if (!geometry) continue
@@ -53,7 +53,6 @@ export default function Root() {
 
 		return linestrings
 	}, [tile])
-	console.log(linestrings)
 
 	const polygons = useMemo(() => {
 		if (!tile) return
@@ -107,7 +106,7 @@ export default function Root() {
 	}, [context, device, presentationFormat])
 
 	const render = useCallback(() => {
-		if (!device || !context || !pipeline || !polygons) return
+		if (!device || !context || !pipeline || !polygons || !linestrings) return
 
 		const encoder = device.createCommandEncoder({label: `encoder`})
 		const pass = encoder.beginRenderPass({
@@ -146,11 +145,36 @@ export default function Root() {
 			pass.setIndexBuffer(indexBuffer, `uint32`)
 			pass.drawIndexed(polygon.indices.length)
 		}
+
+		for (let i = 0; i < linestrings.length; i++) {
+			const linestring = linestrings[i]
+
+			const vertexData = new Float32Array(linestring.vertices)
+			const vertexBuffer = device.createBuffer({
+				label: `vertex buffer: linestring ${i}`,
+				size: vertexData.byteLength,
+				usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
+			})
+			device.queue.writeBuffer(vertexBuffer, 0, vertexData)
+
+			const indexData = new Uint32Array(linestring.indices)
+			const indexBuffer = device.createBuffer({
+				label: `index buffer: linestring ${i}`,
+				size: indexData.byteLength,
+				usage: GPUBufferUsage.INDEX | GPUBufferUsage.COPY_DST,
+			})
+			device.queue.writeBuffer(indexBuffer, 0, indexData)
+
+			pass.setVertexBuffer(0, vertexBuffer)
+			pass.setIndexBuffer(indexBuffer, `uint32`)
+			pass.drawIndexed(linestring.indices.length)
+		}
+
 		pass.end()
 
 		const commandBuffer = encoder.finish()
 		device.queue.submit([commandBuffer])
-	}, [context, device, pipeline, polygons])
+	}, [context, device, linestrings, pipeline, polygons])
 
 	// Keep canvas size in sync with display size
 	useEffect(() => {

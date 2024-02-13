@@ -1,11 +1,12 @@
 import {commandTypes, decodeParameterInteger} from "./util"
+import {linestringToMesh} from "@/linestring-to-mesh"
 
 export const parseLineStringGeometry = (geometry: number[], extent: number) => {
 	let integerType: "command" | "parameter" = `command`
 	let commandType: number | null = null
 	let commandsLeft = 0
 	let cursor: [number, number] = [0, 0]
-	let linestrings: number[][] = []
+	let linestrings: number[][] = [[]]
 	for (let i = 0; i < geometry.length; i++) {
 		const integer = geometry[i]
 		const latestLinestring = linestrings.at(-1)!
@@ -16,9 +17,9 @@ export const parseLineStringGeometry = (geometry: number[], extent: number) => {
 				const commandCount = integer >> 3
 				commandsLeft = commandCount
 
-				if (commandType === commandTypes.moveTo) {
-					linestrings.push([])
-				} else integerType = `parameter`
+				if (commandType === commandTypes.moveTo) linestrings.push([])
+
+				integerType = `parameter`
 
 				break
 			}
@@ -36,5 +37,10 @@ export const parseLineStringGeometry = (geometry: number[], extent: number) => {
 		if (commandsLeft === 0) integerType = `command`
 	}
 
-	return linestrings
+	return linestrings.map((linestring) =>
+		linestringToMesh(
+			linestring.map((vertex, i) => (i % 2 === 0 ? vertex : 1 - vertex)),
+			0.02,
+		),
+	)
 }
