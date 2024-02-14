@@ -46,7 +46,7 @@ export class Vec2 {
 
 	normalized = () => Vec2.norm(this)
 
-	times = (s: number) => Vec2.mul(this, s)
+	times = (s: number) => Vec2.scale(this, s)
 
 	static add = (a: Vec2, b: Vec2) => new Vec2(a.x + b.x, a.y + b.y)
 
@@ -68,9 +68,9 @@ export class Vec2 {
 
 	static len = (v: Vec2) => Math.sqrt(v.x * v.x + v.y * v.y)
 
-	static mul = (v: Vec2, s: number) => new Vec2(v.x * s, v.y * s)
-
 	static norm = (v: Vec2) => (v.length === 0 ? v : new Vec2(v.x / v.length, v.y / v.length))
+
+	static scale = (v: Vec2, s: number) => new Vec2(v.x * s, v.y * s)
 
 	static sub = (a: Vec2, b: Vec2) => new Vec2(a.x - b.x, a.y - b.y)
 }

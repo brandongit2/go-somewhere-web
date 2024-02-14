@@ -1,10 +1,24 @@
-import {type RefObject, useEffect, useState} from "react"
+import {createContext, useState, type ReactNode, useEffect, type RefObject, useContext} from "react"
 
-import {useAsyncError} from "./use-async-error"
+import {useAsyncError} from "./hooks/use-async-error"
+
+export const WebgpuContext = createContext({
+	gpu: undefined as GPU | undefined,
+	adapter: undefined as GPUAdapter | undefined,
+	device: undefined as GPUDevice | undefined,
+	context: undefined as GPUCanvasContext | undefined,
+	presentationFormat: undefined as GPUTextureFormat | undefined,
+	canvasRef: {current: undefined} as RefObject<HTMLCanvasElement | undefined>,
+})
 
 let didInit = false
 
-export const useWebgpu = (canvasRef: RefObject<HTMLCanvasElement>) => {
+export type WebgpuProviderProps = {
+	canvasRef: RefObject<HTMLCanvasElement>
+	children: ReactNode
+}
+
+export const WebgpuProvider = ({canvasRef, children}: WebgpuProviderProps) => {
 	const throwError = useAsyncError()
 
 	const [gpu, setGpu] = useState<GPU>()
@@ -50,5 +64,20 @@ export const useWebgpu = (canvasRef: RefObject<HTMLCanvasElement>) => {
 		init().catch(throwError)
 	}, [canvasRef, throwError])
 
-	return {gpu, adapter, device, context, presentationFormat}
+	return (
+		<WebgpuContext.Provider
+			value={{
+				gpu,
+				adapter,
+				device,
+				context,
+				presentationFormat,
+				canvasRef,
+			}}
+		>
+			{children}
+		</WebgpuContext.Provider>
+	)
 }
+
+export const useWebgpu = () => useContext(WebgpuContext)
