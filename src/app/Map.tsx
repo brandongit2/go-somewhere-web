@@ -2,7 +2,7 @@
 
 import {OrthographicCamera} from "@react-three/drei"
 import {Canvas, extend, type BufferGeometryNode, type MaterialNode} from "@react-three/fiber"
-import {motion, useAnimationFrame, useMotionValue} from "framer-motion"
+import {motion, useAnimationFrame, useMotionValue, useTransform} from "framer-motion"
 import {MeshLineGeometry, MeshLineMaterial} from "meshline"
 import {useEffect, useRef, useState} from "react"
 
@@ -40,13 +40,13 @@ export const Map = () => {
 	const lat = useThrottleMotionValue(_lat)
 	const lng = useThrottleMotionValue(_lng)
 	const zoom = useThrottleMotionValue(_zoom)
+	const _degreesPerPx = useTransform(() => 360 / pxPerTile / 2 ** _zoom.get())
 	const zoomRounded = Math.floor(zoom)
 
-	const degreesPerPx = 360 / pxPerTile / 2 ** zoom
-	const leftTile = Math.floor(lng2tile(lng, zoomRounded) - (degreesPerPx * (screenWidth / 2)) / pxPerTile)
-	const rightTile = Math.ceil(lng2tile(lng, zoomRounded) + (degreesPerPx * (screenWidth / 2)) / pxPerTile)
-	const topTile = Math.floor(lat2tile(lat, zoomRounded) - (degreesPerPx * (screenHeight / 2)) / pxPerTile)
-	const bottomTile = Math.ceil(lat2tile(lat, zoomRounded) + (degreesPerPx * (screenHeight / 2)) / pxPerTile)
+	const leftTile = Math.floor(lng2tile(clamp(lng - (screenWidth / 2) * _degreesPerPx.get(), -180, 180), zoomRounded))
+	const rightTile = Math.ceil(lng2tile(clamp(lng + (screenWidth / 2) * _degreesPerPx.get(), -180, 180), zoomRounded))
+	const topTile = Math.floor(lat2tile(clamp(lat + (screenHeight / 2) * _degreesPerPx.get(), -85, 85), zoomRounded))
+	const bottomTile = Math.ceil(lat2tile(clamp(lat - (screenHeight / 2) * _degreesPerPx.get(), -85, 85), zoomRounded))
 	let tilesInView: Array<[number, number]> = []
 	for (let x = clamp(leftTile, 0, 2 ** zoomRounded); x < clamp(rightTile, 0, 2 ** zoomRounded); x++) {
 		for (let y = clamp(topTile, 0, 2 ** zoomRounded); y < clamp(bottomTile, 0, 2 ** zoomRounded); y++) {
@@ -58,10 +58,10 @@ export const Map = () => {
 	useAnimationFrame(() => {
 		if (!cameraRef.current) return
 
-		cameraRef.current.left = _lng.get() - degreesPerPx * (screenWidth / 2)
-		cameraRef.current.right = _lng.get() + degreesPerPx * (screenWidth / 2)
-		cameraRef.current.top = _lat.get() + degreesPerPx * (screenHeight / 2)
-		cameraRef.current.bottom = _lat.get() - degreesPerPx * (screenHeight / 2)
+		cameraRef.current.left = _lng.get() - _degreesPerPx.get() * (screenWidth / 2)
+		cameraRef.current.right = _lng.get() + _degreesPerPx.get() * (screenWidth / 2)
+		cameraRef.current.top = _lat.get() + _degreesPerPx.get() * (screenHeight / 2)
+		cameraRef.current.bottom = _lat.get() - _degreesPerPx.get() * (screenHeight / 2)
 		cameraRef.current.updateProjectionMatrix()
 	})
 
@@ -69,8 +69,8 @@ export const Map = () => {
 		<motion.div
 			className="h-full w-full"
 			onPan={(event, info) => {
-				_lng.set(clamp(_lng.get() - info.delta.x * degreesPerPx, -180, 180))
-				_lat.set(clamp(_lat.get() + info.delta.y * degreesPerPx, -85, 85))
+				_lng.set(clamp(_lng.get() - info.delta.x * _degreesPerPx.get(), -180, 180))
+				_lat.set(clamp(_lat.get() + info.delta.y * _degreesPerPx.get(), -85, 85))
 			}}
 			onWheel={(event) => {
 				_zoom.set(clamp(_zoom.get() - event.deltaY * 0.01, 0, 18))
@@ -78,7 +78,7 @@ export const Map = () => {
 		>
 			<Canvas>
 				{tilesInView.map(([x, y]) => (
-					<MapTile key={`${x}.${y}`} lng={x} lat={y} zoom={zoomRounded} />
+					<MapTile key={`${x}.${y}`} x={x} y={y} zoom={zoomRounded} />
 				))}
 
 				<OrthographicCamera

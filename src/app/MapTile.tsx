@@ -12,20 +12,21 @@ import {MapLayer} from "./MapLayer"
 import {MAPBOX_ACCESS_TOKEN} from "@/env"
 
 export type MapTileProps = {
-	lng: number
-	lat: number
+	x: number
+	y: number
 	zoom: number
 }
 
-export const MapTile = ({lng, lat, zoom}: MapTileProps) => {
+export const MapTile = ({x, y, zoom}: MapTileProps) => {
 	const {data} = useSuspenseQuery({
-		queryKey: [`vectortile-${zoom}/${lng}/${lat}`],
+		queryKey: [`vectortile-${zoom}/${x}/${y}`],
 		queryFn: async () =>
-			await wretch(`https://api.mapbox.com/v4/mapbox.mapbox-streets-v8/${Math.round(zoom)}/${lng}/${lat}.mvt`)
+			await wretch(`https://api.mapbox.com/v4/mapbox.mapbox-streets-v8/${Math.round(zoom)}/${x}/${y}.mvt`)
 				.addon(QueryStringAddon)
 				.query({access_token: MAPBOX_ACCESS_TOKEN})
 				.get()
 				.arrayBuffer(),
+		staleTime: Infinity,
 	})
 
 	const layers = useMemo(() => {
@@ -42,7 +43,7 @@ export const MapTile = ({lng, lat, zoom}: MapTileProps) => {
 					type: VectorTileFeature.types[feature.type],
 					id: feature.id,
 					properties: feature.properties,
-					geoJson: feature.toGeoJSON(lng, lat, zoom),
+					geoJson: feature.toGeoJSON(x, y, zoom),
 				})
 			}
 
@@ -54,8 +55,7 @@ export const MapTile = ({lng, lat, zoom}: MapTileProps) => {
 			}
 		}
 		return layers
-	}, [data, lng, lat, zoom])
-	// console.log(layers)
+	}, [data, x, y, zoom])
 
 	return (
 		<>
@@ -67,34 +67,6 @@ export const MapTile = ({lng, lat, zoom}: MapTileProps) => {
 			{layers.road && <MapLayer layer={layers.road} color="gray" />}
 			{layers.motorway_junction && <MapLayer layer={layers.motorway_junction} color="gray" />}
 			{layers.aeroway && <MapLayer layer={layers.aeroway} color="gray" />}
-			<line>
-				<bufferGeometry>
-					<bufferAttribute
-						attach="attributes-position"
-						args={[
-							new Float32Array([
-								lng,
-								lat,
-								0,
-								lng + 360 / 2 ** zoom,
-								lat,
-								0,
-								lng + 360 / 2 ** zoom,
-								lat + 360 / 2 ** zoom,
-								0,
-								lng,
-								lat + 360 / 2 ** zoom,
-								0,
-								lng,
-								lat,
-								0,
-							]),
-							3,
-						]}
-					/>
-				</bufferGeometry>
-				<lineBasicMaterial color="red" />
-			</line>
 		</>
 	)
 }
