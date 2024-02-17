@@ -1,53 +1,98 @@
 "use client"
 
-import {VectorTile} from "@mapbox/vector-tile"
 import {OrthographicCamera} from "@react-three/drei"
 import {Canvas, extend, type BufferGeometryNode, type MaterialNode} from "@react-three/fiber"
-import {useSuspenseQuery} from "@tanstack/react-query"
-import {motion, useMotionValue} from "framer-motion"
+import {motion, useAnimationFrame, useMotionValue} from "framer-motion"
 import {MeshLineGeometry, MeshLineMaterial} from "meshline"
-import Pbf from "pbf"
-import {useMemo} from "react"
-import wretch from "wretch"
-// eslint-disable-next-line import/no-named-as-default -- `QueryStringAddon` in this import is an interface, not what we want
-import QueryStringAddon from "wretch/addons/queryString"
+import {useEffect, useRef, useState} from "react"
 
-import {WaterLayer} from "./WaterLayer"
-import {MAPBOX_ACCESS_TOKEN} from "@/env"
+import type {OrthographicCamera as ThreeOrthographicCamera} from "three"
+
+import {MapTile} from "./MapTile"
+import {useThrottleMotionValue} from "@/hooks/use-throttle-motion-value"
+import {clamp, lat2tile, lng2tile} from "@/util"
+// eslint-disable-next-line import/no-named-as-default -- `QueryStringAddon` in this import is an interface, not what we want
 
 extend({MeshLineGeometry, MeshLineMaterial})
 
-const zoom = 0
-const tileX = 0
-const tileY = 0
+const pxPerTile = 512
 
-const MotionCanvas = motion(Canvas)
+export const Map = () => {
+	const [screenWidth, setScreenWidth] = useState(1000)
+	const [screenHeight, setScreenHeight] = useState(1000)
+	useEffect(() => {
+		const handleResize = () => {
+			setScreenWidth(window.innerWidth)
+			setScreenHeight(window.innerHeight)
+		}
+		handleResize()
 
-export function Map() {
-	const {data} = useSuspenseQuery({
-		queryKey: [`vectortile-${zoom}/${tileX}/${tileY}`],
-		queryFn: async () =>
-			await wretch(`https://api.mapbox.com/v4/mapbox.mapbox-streets-v8/${zoom}/${tileX}/${tileY}.mvt`)
-				.addon(QueryStringAddon)
-				.query({access_token: MAPBOX_ACCESS_TOKEN})
-				.get()
-				.arrayBuffer(),
+		window.addEventListener(`resize`, handleResize)
+		return () => window.removeEventListener(`resize`, handleResize)
+	}, [])
+
+	// const screenToClipMatrix = new Matrix3().set(2 / screenWidth, 0, -1, 0, -2 / screenHeight, 1, 0, 0, 1)
+
+	const _lng = useMotionValue(0)
+	const _lat = useMotionValue(0)
+	const _zoom = useMotionValue(0)
+
+	const lat = useThrottleMotionValue(_lat)
+	const lng = useThrottleMotionValue(_lng)
+	const zoom = useThrottleMotionValue(_zoom)
+	const zoomRounded = Math.floor(zoom)
+
+	const degreesPerPx = 360 / pxPerTile / 2 ** zoom
+	const leftTile = Math.floor(lng2tile(lng, zoomRounded) - (degreesPerPx * (screenWidth / 2)) / pxPerTile)
+	const rightTile = Math.ceil(lng2tile(lng, zoomRounded) + (degreesPerPx * (screenWidth / 2)) / pxPerTile)
+	const topTile = Math.floor(lat2tile(lat, zoomRounded) - (degreesPerPx * (screenHeight / 2)) / pxPerTile)
+	const bottomTile = Math.ceil(lat2tile(lat, zoomRounded) + (degreesPerPx * (screenHeight / 2)) / pxPerTile)
+	let tilesInView: Array<[number, number]> = []
+	for (let x = clamp(leftTile, 0, 2 ** zoomRounded); x < clamp(rightTile, 0, 2 ** zoomRounded); x++) {
+		for (let y = clamp(topTile, 0, 2 ** zoomRounded); y < clamp(bottomTile, 0, 2 ** zoomRounded); y++) {
+			tilesInView.push([x, y])
+		}
+	}
+
+	const cameraRef = useRef<ThreeOrthographicCamera>(null)
+	useAnimationFrame(() => {
+		if (!cameraRef.current) return
+
+		cameraRef.current.left = _lng.get() - degreesPerPx * (screenWidth / 2)
+		cameraRef.current.right = _lng.get() + degreesPerPx * (screenWidth / 2)
+		cameraRef.current.top = _lat.get() + degreesPerPx * (screenHeight / 2)
+		cameraRef.current.bottom = _lat.get() - degreesPerPx * (screenHeight / 2)
+		cameraRef.current.updateProjectionMatrix()
 	})
 
-	const layers = useMemo(() => {
-		const tile = new VectorTile(new Pbf(data))
-		return tile.layers
-	}, [data])
-
-	const x = useMotionValue(0)
-	const y = useMotionValue(0)
-
 	return (
-		<MotionCanvas style={{x, y}}>
-			<WaterLayer layer={layers.water} />
+		<motion.div
+			className="h-full w-full"
+			onPan={(event, info) => {
+				_lng.set(clamp(_lng.get() - info.delta.x * degreesPerPx, -180, 180))
+				_lat.set(clamp(_lat.get() + info.delta.y * degreesPerPx, -85, 85))
+			}}
+			onWheel={(event) => {
+				_zoom.set(clamp(_zoom.get() - event.deltaY * 0.01, 0, 18))
+			}}
+		>
+			<Canvas>
+				{tilesInView.map(([x, y]) => (
+					<MapTile key={`${x}.${y}`} lng={x} lat={y} zoom={zoomRounded} />
+				))}
 
-			<OrthographicCamera makeDefault manual left={-100} right={100} top={100} bottom={-100} position={[0, 0, 5]} />
-		</MotionCanvas>
+				<OrthographicCamera
+					makeDefault
+					manual
+					ref={cameraRef}
+					left={-100}
+					right={100}
+					top={100}
+					bottom={-100}
+					position={[0, 0, 5]}
+				/>
+			</Canvas>
+		</motion.div>
 	)
 }
 

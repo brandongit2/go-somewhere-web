@@ -46,6 +46,7 @@ module.exports = {
 				`plugin:@typescript-eslint/stylistic-type-checked`,
 			],
 			rules: {
+				"@typescript-eslint/array-type": [`warn`, {default: `array-simple`}],
 				"@typescript-eslint/consistent-type-definitions": [`warn`, `type`],
 				"@typescript-eslint/consistent-type-imports": `warn`,
 				"@typescript-eslint/no-unnecessary-condition": `warn`,
