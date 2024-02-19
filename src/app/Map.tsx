@@ -67,6 +67,9 @@ export const Map = () => {
 
 		const width = canvasElement.getBoundingClientRect().width
 		const height = canvasElement.getBoundingClientRect().height
+		webgpuContext.current.width = width
+		webgpuContext.current.height = height
+
 		canvasElement.width = clamp(width, 1, device.limits.maxTextureDimension2D) * devicePixelRatio
 		canvasElement.height = clamp(height, 1, device.limits.maxTextureDimension2D) * devicePixelRatio
 
