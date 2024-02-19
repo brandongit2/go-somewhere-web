@@ -13,7 +13,7 @@ import QueryStringAddon from "wretch/addons/queryString"
 import type {WebgpuContext} from "./context"
 import type {MapLayerFeature, MapTileLayer} from "./types"
 
-import {MapLayer} from "./MapLayer"
+import {MapTile} from "./MapTile"
 import {MAPBOX_ACCESS_TOKEN} from "@/env"
 import {useAsyncError} from "@/hooks/use-async-error"
 import {Mat4} from "@/math/Mat4"
@@ -22,7 +22,7 @@ import {clamp, lat2tile, lng2tile} from "@/util"
 let didInit = false
 const pxPerTile = 512
 
-export const Map = () => {
+export const MapRoot = () => {
 	const lng = useMotionValue(0)
 	const lat = useMotionValue(0)
 	const zoom = useMotionValue(0)
@@ -164,6 +164,7 @@ export const Map = () => {
 	})
 
 	// Render
+	const tileCache = useRef(new Map<string, MapTile>())
 	useAnimationFrame(() => {
 		if (!webgpuContext.current) return
 		const {canvasContext, device, bindGroup} = webgpuContext.current
@@ -188,10 +189,10 @@ export const Map = () => {
 			const data = results[i]?.data
 			if (!data) return
 
-			const tile = new VectorTile(new Pbf(data))
+			const _tile = new VectorTile(new Pbf(data))
 			const layers: Record<string, MapTileLayer> = {}
-			for (const name in tile.layers) {
-				const layer = tile.layers[name]!
+			for (const name in _tile.layers) {
+				const layer = _tile.layers[name]!
 
 				let features: MapLayerFeature[] = []
 				for (let i = 0; i < layer.length; i++) {
@@ -213,9 +214,13 @@ export const Map = () => {
 				}
 			}
 
-			if (layers.water) {
-				const waterLayer = new MapLayer(layers.water, `blue`, webgpuContext.current)
-				waterLayer.draw(pass, webgpuContext.current)
+			if (tileCache.current.has(`${x}/${y}/${zoom}`)) {
+				const tile = tileCache.current.get(`${x}/${y}/${zoom}`)!
+				tile.draw(pass, webgpuContext.current)
+			} else {
+				const tile = new MapTile({x, y, zoom, layers}, webgpuContext.current)
+				tileCache.current.set(`${x}/${y}/${zoom}`, tile)
+				tile.draw(pass, webgpuContext.current)
 			}
 		})
 

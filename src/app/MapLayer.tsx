@@ -17,7 +17,7 @@ export class MapLayer {
 
 	meshes: Array<{
 		vertices: number[]
-		indices?: number[]
+		indices: number[]
 	}>
 
 	constructor(
@@ -35,11 +35,17 @@ export class MapLayer {
 		this.meshes = geometries.flatMap((geometry) => {
 			switch (geometry.type) {
 				case `LineString`: {
-					return [{vertices: vec2ArrayToVec3Array(geometry.coordinates.flat())}]
+					return [
+						{
+							vertices: vec2ArrayToVec3Array(geometry.coordinates.flat()),
+							indices: new Array(geometry.coordinates.length).fill(0).map((_, i) => i),
+						},
+					]
 				}
 				case `MultiLineString`: {
 					return geometry.coordinates.map((coords) => ({
 						vertices: vec2ArrayToVec3Array(coords.flat()),
+						indices: new Array(coords.length).fill(0).map((_, i) => i),
 					}))
 				}
 				case `Polygon`: {
@@ -92,28 +98,28 @@ export class MapLayer {
 	draw(encoder: GPURenderPassEncoder, {device}: WebgpuContext) {
 		encoder.setPipeline(this.renderPipeline)
 
-		this.meshes.forEach((mesh) => {
-			const vertexBuffer = device.createBuffer({
-				label: `vertex buffer`,
-				size: mesh.vertices.length * 4,
-				usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
-			})
-			device.queue.writeBuffer(vertexBuffer, 0, new Float32Array(mesh.vertices))
-			encoder.setVertexBuffer(0, vertexBuffer)
+		let singleMesh = {vertices: [] as number[], indices: [] as number[]}
+		for (const mesh of this.meshes) {
+			singleMesh.indices.push(...mesh.indices.map((index) => index + singleMesh.vertices.length / 3))
+			singleMesh.vertices.push(...mesh.vertices)
+		}
 
-			if (mesh.indices) {
-				const indexBuffer = device.createBuffer({
-					label: `index buffer`,
-					size: mesh.indices.length * 4,
-					usage: GPUBufferUsage.INDEX | GPUBufferUsage.COPY_DST,
-				})
-				device.queue.writeBuffer(indexBuffer, 0, new Uint32Array(mesh.indices))
-				encoder.setIndexBuffer(indexBuffer, `uint32`)
-
-				encoder.drawIndexed(mesh.indices.length)
-			} else {
-				encoder.draw(mesh.vertices.length / 3)
-			}
+		const vertexBuffer = device.createBuffer({
+			label: `vertex buffer`,
+			size: singleMesh.vertices.length * 4,
+			usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
 		})
+		device.queue.writeBuffer(vertexBuffer, 0, new Float32Array(singleMesh.vertices))
+		encoder.setVertexBuffer(0, vertexBuffer)
+
+		const indexBuffer = device.createBuffer({
+			label: `index buffer`,
+			size: singleMesh.indices.length * 4,
+			usage: GPUBufferUsage.INDEX | GPUBufferUsage.COPY_DST,
+		})
+		device.queue.writeBuffer(indexBuffer, 0, new Uint32Array(singleMesh.indices))
+		encoder.setIndexBuffer(indexBuffer, `uint32`)
+
+		encoder.drawIndexed(singleMesh.indices.length)
 	}
 }

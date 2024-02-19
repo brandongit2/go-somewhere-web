@@ -1,6 +1,13 @@
 import type {VectorTileFeature} from "@mapbox/vector-tile"
 import type {Feature} from "geojson"
 
+export type MapTileType = {
+	x: number
+	y: number
+	zoom: number
+	layers: Record<string, MapTileLayer>
+}
+
 export type MapTileLayer = {
 	version?: number
 	name: string
