@@ -1,10 +1,9 @@
 "use client"
 
 import {VectorTile, VectorTileFeature} from "@mapbox/vector-tile"
-import {useSuspenseQueries} from "@tanstack/react-query"
 import {motion, useAnimationFrame, useMotionValue, useTransform} from "framer-motion"
 import Pbf from "pbf"
-import {useCallback, useEffect, useRef, useState} from "react"
+import {memo, useCallback, useEffect, useRef} from "react"
 import invariant from "tiny-invariant"
 import wretch from "wretch"
 // eslint-disable-next-line import/no-named-as-default -- `QueryStringAddon` in this import is an interface, not what we want
@@ -17,20 +16,23 @@ import {MapTile} from "./MapTile"
 import {MAPBOX_ACCESS_TOKEN} from "@/env"
 import {useAsyncError} from "@/hooks/use-async-error"
 import {Mat4} from "@/math/Mat4"
+import {Vec2} from "@/math/Vec2"
 import {clamp, lat2tile, lng2tile} from "@/util"
 
-let didInit = false
 const pxPerTile = 512
 
-export const MapRoot = () => {
+const MapRootImpl = () => {
+	const throwError = useAsyncError()
 	const lng = useMotionValue(0)
 	const lat = useMotionValue(0)
 	const zoom = useMotionValue(0)
 	const degreesPerPx = useTransform(() => 360 / pxPerTile / 2 ** zoom.get())
 
+	const tilesInViewRef = useRef<Array<[number, number, number]>>([])
+	const tileDataCache = useRef(new Map<string, ArrayBuffer>())
 	const updateCamera = useCallback(() => {
 		if (!webgpuContext.current) return
-		const {height, width, device, uniformBuffer} = webgpuContext.current
+		const {height, width, device, viewMatrixUniformBuffer} = webgpuContext.current
 
 		const zoomRounded = Math.floor(zoom.get())
 		const leftTile = Math.floor(lng2tile(clamp(lng.get() - (width / 2) * degreesPerPx.get(), -180, 180), zoomRounded))
@@ -43,10 +45,24 @@ export const MapRoot = () => {
 				tilesInView.push([x, y, zoomRounded])
 			}
 		}
-		setTilesInView(tilesInView)
+		tilesInViewRef.current = tilesInView
+
+		for (const [x, y, zoom] of tilesInView) {
+			if (tileDataCache.current.has(`${x}/${y}/${zoom}`)) continue
+
+			wretch(`https://api.mapbox.com/v4/mapbox.mapbox-streets-v8/${Math.round(zoom)}/${x}/${y}.mvt`)
+				.addon(QueryStringAddon)
+				.query({access_token: MAPBOX_ACCESS_TOKEN})
+				.get()
+				.arrayBuffer()
+				.then((data) => {
+					tileDataCache.current.set(`${x}/${y}/${zoom}`, data)
+				})
+				.catch(throwError)
+		}
 
 		device.queue.writeBuffer(
-			uniformBuffer,
+			viewMatrixUniformBuffer,
 			0,
 			new Float32Array(
 				Mat4.fromOrthographic(
@@ -59,7 +75,7 @@ export const MapRoot = () => {
 				),
 			),
 		)
-	}, [degreesPerPx, lat, lng, zoom])
+	}, [degreesPerPx, lat, lng, throwError, zoom])
 
 	const handleResize = useCallback(() => {
 		if (!webgpuContext.current) return
@@ -81,14 +97,10 @@ export const MapRoot = () => {
 	}, [handleResize])
 
 	const canvasRef = useRef<HTMLCanvasElement>(null)
-	const throwError = useAsyncError()
 	const webgpuContext = useRef<WebgpuContext | null>(null)
 	useEffect(() => {
 		const init = async () => {
-			if (didInit) return
 			invariant(canvasRef.current)
-
-			didInit = true
 
 			const gpu = navigator.gpu
 			const adapter = await gpu.requestAdapter()
@@ -111,15 +123,23 @@ export const MapRoot = () => {
 				format: presentationFormat,
 			})
 
-			const uniformBuffer = device.createBuffer({
-				label: `uniform buffer`,
+			const viewMatrixUniformBuffer = device.createBuffer({
+				label: `view matrix uniform buffer`,
 				size: 4 * 4 * 4, // mat4x4f
+				usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+			})
+			const colorUniformBuffer = device.createBuffer({
+				label: `color uniform buffer`,
+				size: 4 * 4, // vec4f
 				usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
 			})
 
 			const bindGroupLayout = device.createBindGroupLayout({
 				label: `bind group layout`,
-				entries: [{binding: 0, visibility: GPUShaderStage.VERTEX, buffer: {type: `uniform`}}],
+				entries: [
+					{binding: 0, visibility: GPUShaderStage.VERTEX, buffer: {type: `uniform`}},
+					{binding: 1, visibility: GPUShaderStage.FRAGMENT, buffer: {type: `uniform`}},
+				],
 			})
 			const pipelineLayout = device.createPipelineLayout({
 				label: `pipeline layout`,
@@ -129,18 +149,26 @@ export const MapRoot = () => {
 			const bindGroup = device.createBindGroup({
 				label: `bind group`,
 				layout: bindGroupLayout,
-				entries: [{binding: 0, resource: {buffer: uniformBuffer}}],
+				entries: [
+					{binding: 0, resource: {buffer: viewMatrixUniformBuffer}},
+					{binding: 1, resource: {buffer: colorUniformBuffer}},
+				],
 			})
 
 			webgpuContext.current = {
 				height: canvasRef.current.getBoundingClientRect().height,
 				width: canvasRef.current.getBoundingClientRect().width,
+				lng,
+				lat,
+				zoom,
+				degreesPerPx,
 				canvasContext,
 				canvasElement: canvasRef.current,
 				device,
 				presentationFormat,
 				pipelineLayout,
-				uniformBuffer,
+				viewMatrixUniformBuffer,
+				colorUniformBuffer,
 				bindGroup,
 			}
 
@@ -148,26 +176,33 @@ export const MapRoot = () => {
 		}
 
 		init().catch(throwError)
-	}, [handleResize, throwError, updateCamera])
-
-	const [tilesInView, setTilesInView] = useState<Array<[number, number, number]>>([])
-	const results = useSuspenseQueries({
-		queries: tilesInView.map(([x, y, zoom]) => ({
-			queryKey: [`tile`, x, y, zoom],
-			queryFn: async () =>
-				await wretch(`https://api.mapbox.com/v4/mapbox.mapbox-streets-v8/${Math.round(zoom)}/${x}/${y}.mvt`)
-					.addon(QueryStringAddon)
-					.query({access_token: MAPBOX_ACCESS_TOKEN})
-					.get()
-					.arrayBuffer(),
-		})),
-	})
+	}, [degreesPerPx, handleResize, lat, lng, throwError, updateCamera, zoom])
 
 	// Render
 	const tileCache = useRef(new Map<string, MapTile>())
+	const zoomChangeQueue = useRef<{amount: number; mouseX: number; mouseY: number} | null>(null)
 	useAnimationFrame(() => {
 		if (!webgpuContext.current) return
 		const {canvasContext, device, bindGroup} = webgpuContext.current
+
+		if (zoomChangeQueue.current) {
+			const pos = new Vec2(lng.get(), lat.get())
+			const cursorX = zoomChangeQueue.current.mouseX - webgpuContext.current.width / 2
+			const cursorY = -(zoomChangeQueue.current.mouseY - webgpuContext.current.height / 2)
+			// Convert cursor position to world position at current zoom level
+			const cursor = new Vec2(cursorX, cursorY).times(degreesPerPx.get()).plus(pos)
+
+			const newZoom = clamp(zoom.get() - zoomChangeQueue.current.amount, 0, 18)
+			zoom.set(newZoom)
+			const newDegreesPerPx = 360 / pxPerTile / 2 ** zoom.get()
+			const newPos = cursor.minus(new Vec2(cursorX, cursorY).times(newDegreesPerPx))
+
+			lng.set(clamp(newPos.x, -180, 180))
+			lat.set(clamp(newPos.y, -85, 85))
+
+			updateCamera()
+			zoomChangeQueue.current = null
+		}
 
 		const encoder = device.createCommandEncoder({label: `encoder`})
 		const pass = encoder.beginRenderPass({
@@ -183,10 +218,10 @@ export const MapRoot = () => {
 		})
 		pass.setBindGroup(0, bindGroup)
 
-		tilesInView.map(([x, y, zoom], i) => {
+		tilesInViewRef.current.map(([x, y, zoom]) => {
 			if (!webgpuContext.current) return
 
-			const data = results[i]?.data
+			const data = tileDataCache.current.get(`${x}/${y}/${zoom}`)
 			if (!data) return
 
 			const _tile = new VectorTile(new Pbf(data))
@@ -239,9 +274,17 @@ export const MapRoot = () => {
 				updateCamera()
 			}}
 			onWheel={(event) => {
-				zoom.set(clamp(zoom.get() - event.deltaY * 0.01, 0, 18))
-				updateCamera()
+				const deltaY = event.deltaY * 0.01
+				if (zoomChangeQueue.current) zoomChangeQueue.current.amount += deltaY
+				else
+					zoomChangeQueue.current = {
+						amount: deltaY,
+						mouseX: event.clientX,
+						mouseY: event.clientY,
+					}
 			}}
 		/>
 	)
 }
+
+export const MapRoot = memo(MapRootImpl)

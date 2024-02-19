@@ -9,7 +9,6 @@
 	},
 	"dependencies": {
 		"@mapbox/vector-tile": "1.3.1",
-		"@tanstack/react-query": "5.21.4",
 		"earcut": "2.2.4",
 		"framer-motion": "11.0.5",
 		"next": "14.1.0",
@@ -20,7 +19,6 @@
 		"wretch": "2.8.0"
 	},
 	"devDependencies": {
-		"@tanstack/eslint-plugin-query": "5.20.1",
 		"@types/earcut": "2.1.4",
 		"@types/geojson": "7946.0.14",
 		"@types/mapbox__vector-tile": "1.3.4",

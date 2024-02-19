@@ -3,8 +3,8 @@ import earcut, {flatten} from "earcut"
 import type {WebgpuContext} from "./context"
 import type {MapTileLayer} from "./types"
 
+import {linestringToMesh} from "./linestring-to-mesh"
 import polygonShaders from "./polygon-shaders.wgsl"
-import {vec2ArrayToVec3Array} from "@/util"
 
 export type MapLayerProps = {
 	layer: MapTileLayer
@@ -15,14 +15,12 @@ export class MapLayer {
 	shaderModule: GPUShaderModule
 	renderPipeline: GPURenderPipeline
 
-	meshes: Array<{
-		vertices: number[]
-		indices: number[]
-	}>
+	vertexBuffer: GPUBuffer
+	indexBuffer: GPUBuffer
 
 	constructor(
 		public layer: MapTileLayer,
-		public color: string,
+		public color: [number, number, number],
 		{device, presentationFormat, pipelineLayout}: WebgpuContext,
 	) {
 		const geometries = layer.features
@@ -32,21 +30,13 @@ export class MapLayer {
 				else return [geometry]
 			})
 
-		this.meshes = geometries.flatMap((geometry) => {
+		const meshes = geometries.flatMap((geometry) => {
 			switch (geometry.type) {
 				case `LineString`: {
-					return [
-						{
-							vertices: vec2ArrayToVec3Array(geometry.coordinates.flat()),
-							indices: new Array(geometry.coordinates.length).fill(0).map((_, i) => i),
-						},
-					]
+					return [linestringToMesh(geometry.coordinates.flat(), 0.01)]
 				}
 				case `MultiLineString`: {
-					return geometry.coordinates.map((coords) => ({
-						vertices: vec2ArrayToVec3Array(coords.flat()),
-						indices: new Array(coords.length).fill(0).map((_, i) => i),
-					}))
+					return geometry.coordinates.map((coords) => linestringToMesh(coords.flat(), 0.01))
 				}
 				case `Polygon`: {
 					const data = flatten(geometry.coordinates)
@@ -69,6 +59,25 @@ export class MapLayer {
 				}
 			}
 		})
+
+		let singleMesh = {vertices: [] as number[], indices: [] as number[]}
+		for (const mesh of meshes) {
+			singleMesh.indices.push(...mesh.indices.map((index) => index + singleMesh.vertices.length / 3))
+			singleMesh.vertices.push(...mesh.vertices)
+		}
+
+		this.vertexBuffer = device.createBuffer({
+			label: `vertex buffer`,
+			size: singleMesh.vertices.length * 4,
+			usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
+		})
+		device.queue.writeBuffer(this.vertexBuffer, 0, new Float32Array(singleMesh.vertices))
+		this.indexBuffer = device.createBuffer({
+			label: `index buffer`,
+			size: singleMesh.indices.length * 4,
+			usage: GPUBufferUsage.INDEX | GPUBufferUsage.COPY_DST,
+		})
+		device.queue.writeBuffer(this.indexBuffer, 0, new Uint32Array(singleMesh.indices))
 
 		this.shaderModule = device.createShaderModule({
 			label: `shaders`,
@@ -95,31 +104,12 @@ export class MapLayer {
 		})
 	}
 
-	draw(encoder: GPURenderPassEncoder, {device}: WebgpuContext) {
+	draw(encoder: GPURenderPassEncoder, {device, colorUniformBuffer}: WebgpuContext) {
 		encoder.setPipeline(this.renderPipeline)
+		device.queue.writeBuffer(colorUniformBuffer, 0, new Float32Array(this.color))
 
-		let singleMesh = {vertices: [] as number[], indices: [] as number[]}
-		for (const mesh of this.meshes) {
-			singleMesh.indices.push(...mesh.indices.map((index) => index + singleMesh.vertices.length / 3))
-			singleMesh.vertices.push(...mesh.vertices)
-		}
-
-		const vertexBuffer = device.createBuffer({
-			label: `vertex buffer`,
-			size: singleMesh.vertices.length * 4,
-			usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
-		})
-		device.queue.writeBuffer(vertexBuffer, 0, new Float32Array(singleMesh.vertices))
-		encoder.setVertexBuffer(0, vertexBuffer)
-
-		const indexBuffer = device.createBuffer({
-			label: `index buffer`,
-			size: singleMesh.indices.length * 4,
-			usage: GPUBufferUsage.INDEX | GPUBufferUsage.COPY_DST,
-		})
-		device.queue.writeBuffer(indexBuffer, 0, new Uint32Array(singleMesh.indices))
-		encoder.setIndexBuffer(indexBuffer, `uint32`)
-
-		encoder.drawIndexed(singleMesh.indices.length)
+		encoder.setVertexBuffer(0, this.vertexBuffer)
+		encoder.setIndexBuffer(this.indexBuffer, `uint32`)
+		encoder.drawIndexed(this.indexBuffer.size / 4)
 	}
 }

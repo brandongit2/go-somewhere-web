@@ -10,7 +10,8 @@ export class MapTile {
 		public tile: MapTileType,
 		webgpuContext: WebgpuContext,
 	) {
-		if (tile.layers.water) this.layers.push(new MapLayer(tile.layers.water, `blue`, webgpuContext))
+		if (tile.layers.water) this.layers.push(new MapLayer(tile.layers.water, [0, 0, 1], webgpuContext))
+		// if (tile.layers.admin) this.layers.push(new MapLayer(tile.layers.admin, [0, 0, 0], webgpuContext))
 	}
 
 	draw(encoder: GPURenderPassEncoder, webgpuContext: WebgpuContext) {
