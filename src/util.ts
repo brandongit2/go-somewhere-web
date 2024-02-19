@@ -14,3 +14,6 @@ export const tile2lat = (y: number, z: number) => {
 }
 
 export const tile2lng = (x: number, z: number) => (x / Math.pow(2, z)) * 360 - 180
+
+export const vec2ArrayToVec3Array = (array: number[]) =>
+	array.flatMap((coord, i) => (i % 2 === 0 ? [coord] : [coord, 0]))

@@ -5,8 +5,8 @@ import "./globals.css"
 import {Providers} from "./Providers"
 
 export const metadata: Metadata = {
-	title: `go somewhere... anywhere.`,
-	description: `sometimes you just want to go somewhere!`,
+	title: `go somewhere!`,
+	description: `sometimes you just want to go somewhere`,
 }
 
 type RootLayoutProps = Readonly<{
@@ -16,7 +16,7 @@ type RootLayoutProps = Readonly<{
 export default function RootLayout({children}: RootLayoutProps) {
 	return (
 		<html lang="en" className="h-full">
-			<body className="min-h-full">
+			<body className="min-h-full overflow-hidden">
 				<Providers>{children}</Providers>
 			</body>
 		</html>
