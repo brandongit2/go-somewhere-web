@@ -23,6 +23,7 @@ module.exports = {
 		"no-constant-condition": [`error`, {checkLoops: false}],
 		"no-debugger": `warn`,
 		"no-empty": [`warn`, {allowEmptyCatch: true}],
+		"no-extra-semi": `off`,
 		"no-mixed-spaces-and-tabs": [`warn`, `smart-tabs`],
 		"no-unused-vars": [`warn`, {ignoreRestSiblings: true}],
 		quotes: [`warn`, `backtick`],

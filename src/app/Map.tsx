@@ -1,25 +1,21 @@
 "use client"
 
-import {VectorTile, VectorTileFeature} from "@mapbox/vector-tile"
 import {motion, useAnimationFrame, useMotionValue, useTransform} from "framer-motion"
-import Pbf from "pbf"
 import {memo, useCallback, useEffect, useRef} from "react"
 import invariant from "tiny-invariant"
-import wretch from "wretch"
-// eslint-disable-next-line import/no-named-as-default -- `QueryStringAddon` in this import is an interface, not what we want
-import QueryStringAddon from "wretch/addons/queryString"
 
 import type {WebgpuContext} from "./context"
-import type {MapLayerFeature, MapTileLayer} from "./types"
+import type {TileId} from "./types"
 
-import {MapTile} from "./MapTile"
-import {MAPBOX_ACCESS_TOKEN} from "@/env"
+import {TileManager} from "./TileManager"
 import {useAsyncError} from "@/hooks/use-async-error"
 import {Mat4} from "@/math/Mat4"
 import {Vec2} from "@/math/Vec2"
 import {clamp, lat2tile, lng2tile} from "@/util"
 
+let didInit = false
 const pxPerTile = 512
+const tileManager = new TileManager()
 
 const MapRootImpl = () => {
 	const throwError = useAsyncError()
@@ -28,8 +24,6 @@ const MapRootImpl = () => {
 	const zoom = useMotionValue(0)
 	const degreesPerPx = useTransform(() => 360 / pxPerTile / 2 ** zoom.get())
 
-	const tilesInViewRef = useRef<Array<[number, number, number]>>([])
-	const tileDataCache = useRef(new Map<string, ArrayBuffer>())
 	const updateCamera = useCallback(() => {
 		if (!webgpuContext.current) return
 		const {height, width, device, viewMatrixUniformBuffer} = webgpuContext.current
@@ -39,27 +33,13 @@ const MapRootImpl = () => {
 		const rightTile = Math.ceil(lng2tile(clamp(lng.get() + (width / 2) * degreesPerPx.get(), -180, 180), zoomRounded))
 		const topTile = Math.floor(lat2tile(clamp(lat.get() + (height / 2) * degreesPerPx.get(), -85, 85), zoomRounded))
 		const bottomTile = Math.ceil(lat2tile(clamp(lat.get() - (height / 2) * degreesPerPx.get(), -85, 85), zoomRounded))
-		let tilesInView: Array<[number, number, number]> = []
+		let tilesInView: TileId[] = []
 		for (let x = clamp(leftTile, 0, 2 ** zoomRounded); x < clamp(rightTile, 0, 2 ** zoomRounded); x++) {
 			for (let y = clamp(topTile, 0, 2 ** zoomRounded); y < clamp(bottomTile, 0, 2 ** zoomRounded); y++) {
-				tilesInView.push([x, y, zoomRounded])
+				tilesInView.push(`${zoomRounded}/${x}/${y}`)
 			}
 		}
-		tilesInViewRef.current = tilesInView
-
-		for (const [x, y, zoom] of tilesInView) {
-			if (tileDataCache.current.has(`${x}/${y}/${zoom}`)) continue
-
-			wretch(`https://api.mapbox.com/v4/mapbox.mapbox-streets-v8/${Math.round(zoom)}/${x}/${y}.mvt`)
-				.addon(QueryStringAddon)
-				.query({access_token: MAPBOX_ACCESS_TOKEN})
-				.get()
-				.arrayBuffer()
-				.then((data) => {
-					tileDataCache.current.set(`${x}/${y}/${zoom}`, data)
-				})
-				.catch(throwError)
-		}
+		tileManager.setTilesInView(tilesInView, webgpuContext.current)
 
 		device.queue.writeBuffer(
 			viewMatrixUniformBuffer,
@@ -75,7 +55,7 @@ const MapRootImpl = () => {
 				),
 			),
 		)
-	}, [degreesPerPx, lat, lng, throwError, zoom])
+	}, [degreesPerPx, lat, lng, zoom])
 
 	const handleResize = useCallback(() => {
 		if (!webgpuContext.current) return
@@ -100,6 +80,7 @@ const MapRootImpl = () => {
 	const webgpuContext = useRef<WebgpuContext | null>(null)
 	useEffect(() => {
 		const init = async () => {
+			if (didInit) return
 			invariant(canvasRef.current)
 
 			const gpu = navigator.gpu
@@ -176,32 +157,37 @@ const MapRootImpl = () => {
 		}
 
 		init().catch(throwError)
+		didInit = true
 	}, [degreesPerPx, handleResize, lat, lng, throwError, updateCamera, zoom])
 
 	// Render
-	const tileCache = useRef(new Map<string, MapTile>())
-	const zoomChangeQueue = useRef<{amount: number; mouseX: number; mouseY: number} | null>(null)
+	const mousePos = useMotionValue<[number, number] | null>(null)
+	const mousePosWorld = useTransform(mousePos, (p) => {
+		if (!webgpuContext.current || !p) return null
+		const {width, height} = webgpuContext.current
+
+		const pos = new Vec2(lng.get(), lat.get())
+		const cursorX = p[0] - width / 2
+		const cursorY = -(p[1] - height / 2)
+		return new Vec2(cursorX, cursorY).times(degreesPerPx.get()).plus(pos)
+	})
+	const zoomChangeAmount = useRef(0)
 	useAnimationFrame(() => {
 		if (!webgpuContext.current) return
-		const {canvasContext, device, bindGroup} = webgpuContext.current
+		const {height, width, zoom, canvasContext, device, bindGroup} = webgpuContext.current
 
-		if (zoomChangeQueue.current) {
-			const pos = new Vec2(lng.get(), lat.get())
-			const cursorX = zoomChangeQueue.current.mouseX - webgpuContext.current.width / 2
-			const cursorY = -(zoomChangeQueue.current.mouseY - webgpuContext.current.height / 2)
-			// Convert cursor position to world position at current zoom level
-			const cursor = new Vec2(cursorX, cursorY).times(degreesPerPx.get()).plus(pos)
+		const mp = mousePos.get()
+		const mpw = mousePosWorld.get()
+		if (zoomChangeAmount.current && mp && mpw) {
+			const newZoom = clamp(zoom.get() - zoomChangeAmount.current, 0, 18)
+			const scaleChange = 2 ** (newZoom - zoom.get())
 
-			const newZoom = clamp(zoom.get() - zoomChangeQueue.current.amount, 0, 18)
+			lng.set(clamp(lng.get() + (mp[0] - 0.5 * width) * (1 - 1 / scaleChange) * degreesPerPx.get(), -180, 180))
+			lat.set(clamp(lat.get() - (mp[1] - 0.5 * height) * (1 - 1 / scaleChange) * degreesPerPx.get(), -85, 85))
 			zoom.set(newZoom)
-			const newDegreesPerPx = 360 / pxPerTile / 2 ** zoom.get()
-			const newPos = cursor.minus(new Vec2(cursorX, cursorY).times(newDegreesPerPx))
-
-			lng.set(clamp(newPos.x, -180, 180))
-			lat.set(clamp(newPos.y, -85, 85))
 
 			updateCamera()
-			zoomChangeQueue.current = null
+			zoomChangeAmount.current = 0
 		}
 
 		const encoder = device.createCommandEncoder({label: `encoder`})
@@ -218,45 +204,20 @@ const MapRootImpl = () => {
 		})
 		pass.setBindGroup(0, bindGroup)
 
-		tilesInViewRef.current.map(([x, y, zoom]) => {
+		tileManager.tilesInView.forEach((tileId) => {
 			if (!webgpuContext.current) return
+			let [zoom, x, y] = TileManager.tileIdToCoords(tileId)
 
-			const data = tileDataCache.current.get(`${x}/${y}/${zoom}`)
-			if (!data) return
-
-			const _tile = new VectorTile(new Pbf(data))
-			const layers: Record<string, MapTileLayer> = {}
-			for (const name in _tile.layers) {
-				const layer = _tile.layers[name]!
-
-				let features: MapLayerFeature[] = []
-				for (let i = 0; i < layer.length; i++) {
-					const feature = layer.feature(i)
-					features.push({
-						extent: feature.extent,
-						type: VectorTileFeature.types[feature.type],
-						id: feature.id,
-						properties: feature.properties,
-						geoJson: feature.toGeoJSON(x, y, zoom),
-					})
-				}
-
-				layers[name] = {
-					version: layer.version,
-					name: layer.name,
-					extent: layer.extent,
-					features,
-				}
+			// Start by trying to find the tile in cache
+			let tile = tileManager.fetchTileFromCache(`${zoom}/${x}/${y}`)
+			// In the meantime, try to find a parent tile to render
+			while (!tile) {
+				;[x, y, zoom] = [x >> 1, y >> 1, zoom - 1]
+				tile = tileManager.fetchTileFromCache(`${zoom}/${x}/${y}`)
+				if (zoom <= 0) return
 			}
 
-			if (tileCache.current.has(`${x}/${y}/${zoom}`)) {
-				const tile = tileCache.current.get(`${x}/${y}/${zoom}`)!
-				tile.draw(pass, webgpuContext.current)
-			} else {
-				const tile = new MapTile({x, y, zoom, layers}, webgpuContext.current)
-				tileCache.current.set(`${x}/${y}/${zoom}`, tile)
-				tile.draw(pass, webgpuContext.current)
-			}
+			tile.draw(pass, webgpuContext.current)
 		})
 
 		pass.end()
@@ -268,20 +229,16 @@ const MapRootImpl = () => {
 		<motion.canvas
 			ref={canvasRef}
 			className="h-full w-full touch-none"
+			onPointerMove={(event) => {
+				mousePos.set([event.clientX, event.clientY])
+			}}
 			onPan={(event, info) => {
 				lng.set(clamp(lng.get() - info.delta.x * degreesPerPx.get(), -180, 180))
 				lat.set(clamp(lat.get() + info.delta.y * degreesPerPx.get(), -85, 85))
 				updateCamera()
 			}}
 			onWheel={(event) => {
-				const deltaY = event.deltaY * 0.01
-				if (zoomChangeQueue.current) zoomChangeQueue.current.amount += deltaY
-				else
-					zoomChangeQueue.current = {
-						amount: deltaY,
-						mouseX: event.clientX,
-						mouseY: event.clientY,
-					}
+				zoomChangeAmount.current += event.deltaY * 0.01
 			}}
 		/>
 	)
