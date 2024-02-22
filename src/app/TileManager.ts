@@ -7,7 +7,7 @@ import AbortAddon from "wretch/addons/abort"
 // eslint-disable-next-line import/no-named-as-default -- `QueryStringAddon` in this import is an interface, not what we want
 import QueryStringAddon from "wretch/addons/queryString"
 
-import type {WebgpuContext} from "./context"
+import type {MapContext} from "./MapContext"
 import type {MapLayerFeature, MapTileLayer, TileId} from "./types"
 
 import {MapTile} from "./MapTile"
@@ -21,6 +21,8 @@ export class TileManager {
 	tilesBeingFetched = new Map<TileId, [AbortController, Promise<MapTile | null>]>()
 	tilesAborted = new Set<TileId>()
 
+	constructor(public mapContext: MapContext) {}
+
 	get tilesInView() {
 		return this._tilesInView
 	}
@@ -28,7 +30,7 @@ export class TileManager {
 	static tileIdToCoords = (tileId: TileId) =>
 		tileId.split(`/`).map((coord) => parseInt(coord)) as [number, number, number]
 
-	fetchTile = async (tileId: TileId, webgpuContext: WebgpuContext): Promise<MapTile | null> => {
+	fetchTile = async (tileId: TileId): Promise<MapTile | null> => {
 		if (this.tileCache.has(tileId)) return this.tileCache.get(tileId)!
 		if (this.tilesBeingFetched.has(tileId)) return this.tilesBeingFetched.get(tileId)![1]
 
@@ -69,7 +71,7 @@ export class TileManager {
 					}
 				}
 
-				const tile = new MapTile({x, y, zoom, layers}, webgpuContext)
+				const tile = new MapTile(this, {x, y, zoom, layers})
 				this.tileCache.set(`${zoom}/${x}/${y}`, tile)
 				return tile
 			})
@@ -87,10 +89,9 @@ export class TileManager {
 
 	fetchTileFromCache = (tileId: TileId): MapTile | undefined => this.tileCache.get(tileId)
 
-	fetchTiles = (tileIds: TileId[], webgpuContext: WebgpuContext): Array<Promise<MapTile | null>> =>
-		tileIds.map((tileId) => this.fetchTile(tileId, webgpuContext))
+	fetchTiles = (tileIds: TileId[]): Array<Promise<MapTile | null>> => tileIds.map((tileId) => this.fetchTile(tileId))
 
-	private setTilesInViewImpl = (tileIds: TileId[], webgpuContext: WebgpuContext) => {
+	private setTilesInViewImpl = (tileIds: TileId[]) => {
 		this._tilesInView = new Set(tileIds)
 
 		// Abort fetching tiles that are no longer in view
@@ -101,7 +102,7 @@ export class TileManager {
 			}
 		}
 
-		this.fetchTiles(tileIds, webgpuContext).forEach((tilePromise) => {
+		this.fetchTiles(tileIds).forEach((tilePromise) => {
 			tilePromise.catch(console.error)
 		})
 	}
