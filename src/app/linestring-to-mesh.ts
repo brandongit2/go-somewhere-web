@@ -22,7 +22,7 @@ export const linestringToMesh = (linestring: number[], lineWidth: number) => {
 
 		prev_nextNormal = nextNormal
 
-		vertices.push(...Vec2.add(currentVertex, miter), ...Vec2.sub(currentVertex, miter), 0)
+		vertices.push(...Vec2.add(currentVertex, miter), 0, ...Vec2.sub(currentVertex, miter), 0)
 	}
 
 	let indices: number[] = []
