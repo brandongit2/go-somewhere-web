@@ -1,5 +1,5 @@
-import type {VectorTileFeature} from "@mapbox/vector-tile"
-import type {Feature} from "geojson"
+import {type VectorTileFeature} from "@mapbox/vector-tile"
+import {type Feature} from "geojson"
 
 export type TileId = `${number}/${number}/${number}`
 export type TileCoords = [number, number, number]

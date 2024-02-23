@@ -1,6 +1,5 @@
-import type {TileId} from "./types"
-
 import {TileManager} from "./TileManager"
+import {type TileId} from "../app/types"
 import {Mat4} from "@/math/Mat4"
 import {clamp, lat2tile, lng2tile} from "@/util"
 
@@ -22,8 +21,6 @@ export class MapContext {
 	presentationFormat: GPUTextureFormat = null!
 	tileManager: TileManager = null!
 
-	bindGroupLayout: GPUBindGroupLayout = null!
-	pipelineLayout: GPUPipelineLayout = null!
 	viewMatrixUniformBuffer: GPUBuffer = null!
 
 	static create = async (canvasElement: HTMLCanvasElement): Promise<MapContext> => {
@@ -60,18 +57,6 @@ export class MapContext {
 			label: `view matrix uniform buffer`,
 			size: 4 * 4 * 4, // mat4x4f
 			usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-		})
-
-		context.bindGroupLayout = context.device.createBindGroupLayout({
-			label: `bind group layout`,
-			entries: [
-				{binding: 0, visibility: GPUShaderStage.VERTEX, buffer: {type: `uniform`}}, // viewMatrix
-				{binding: 1, visibility: GPUShaderStage.FRAGMENT, buffer: {type: `uniform`}}, // color
-			],
-		})
-		context.pipelineLayout = context.device.createPipelineLayout({
-			label: `pipeline layout`,
-			bindGroupLayouts: [context.bindGroupLayout],
 		})
 
 		context.tileManager = new TileManager(context)

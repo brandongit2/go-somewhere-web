@@ -7,10 +7,9 @@ import AbortAddon from "wretch/addons/abort"
 // eslint-disable-next-line import/no-named-as-default -- `QueryStringAddon` in this import is an interface, not what we want
 import QueryStringAddon from "wretch/addons/queryString"
 
-import type {MapContext} from "./MapContext"
-import type {MapLayerFeature, MapTileLayer, TileId} from "./types"
-
+import {type MapContext} from "./MapContext"
 import {MapTile} from "./MapTile"
+import {type MapLayerFeature, type MapTileLayer, type TileId} from "../app/types"
 import {MAPBOX_ACCESS_TOKEN} from "@/env"
 
 const fetchLimit = pLimit(20)
@@ -21,7 +20,7 @@ export class TileManager {
 	tilesBeingFetched = new Map<TileId, [AbortController, Promise<MapTile | null>]>()
 	tilesAborted = new Set<TileId>()
 
-	constructor(public mapContext: MapContext) {}
+	constructor(private mapContext: MapContext) {}
 
 	get tilesInView() {
 		return this._tilesInView
@@ -71,7 +70,7 @@ export class TileManager {
 					}
 				}
 
-				const tile = new MapTile(this, {x, y, zoom, layers})
+				const tile = new MapTile(this.mapContext, this, {x, y, zoom, layers})
 				this.tileCache.set(`${zoom}/${x}/${y}`, tile)
 				return tile
 			})

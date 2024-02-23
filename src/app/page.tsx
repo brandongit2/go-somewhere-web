@@ -1,4 +1,4 @@
-import {MapRoot} from "./Map"
+import {MapRoot} from "../map/Map"
 
 export default function RootPage() {
 	return (

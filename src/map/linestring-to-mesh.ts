@@ -1,12 +1,14 @@
 import {Vec2} from "@/math/Vec2"
 import {roughEq} from "@/util"
 
-export const linestringToMesh = (linestring: number[], lineWidth: number) => {
-	if (linestring.length < 4) return {vertices: [], indices: []}
+export const linestringToMesh = (linestring: number[]) => {
+	const vertices: number[] = []
+	const normals: number[] = []
+	const miterLengths: number[] = []
+	let indices: number[] = []
+	if (linestring.length < 4) return {vertices, normals, miterLengths, indices}
 
 	let prev_nextNormal: Vec2 | undefined
-
-	let vertices: number[] = []
 	for (let i = 0; i < linestring.length; i += 2) {
 		const currentVertex = new Vec2(linestring[i]!, linestring[i + 1]!)
 		const nextVertex = i === linestring.length - 2 ? undefined : new Vec2(linestring[i + 2]!, linestring[i + 3]!)
@@ -17,18 +19,19 @@ export const linestringToMesh = (linestring: number[], lineWidth: number) => {
 
 		const angle = Vec2.angleBetween(prevNormal, nextNormal)
 		let miterLength = 1
-		if (!roughEq(angle, Math.PI)) miterLength = lineWidth / Math.cos(angle / 2)
-		const miter = Vec2.bisect(prevNormal, nextNormal, miterLength * lineWidth)
+		if (!roughEq(angle, Math.PI)) miterLength = 1 / Math.cos(angle / 2)
+		const miter = Vec2.bisect(prevNormal, nextNormal, miterLength)
 
 		prev_nextNormal = nextNormal
 
-		vertices.push(...Vec2.add(currentVertex, miter), 0, ...Vec2.sub(currentVertex, miter), 0)
+		vertices.push(...currentVertex, 0, ...currentVertex, 0)
+		normals.push(...miter.normalized(), 0, ...miter.times(-1).normalized(), 0)
+		miterLengths.push(miterLength, miterLength)
 	}
 
-	let indices: number[] = []
 	for (let i = 0; i < linestring.length - 2; i += 2) {
 		indices.push(i, i + 1, i + 2, i + 1, i + 3, i + 2)
 	}
 
-	return {vertices, indices}
+	return {vertices, normals, miterLengths, indices}
 }

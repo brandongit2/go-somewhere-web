@@ -25,7 +25,7 @@ module.exports = {
 		"no-empty": [`warn`, {allowEmptyCatch: true}],
 		"no-extra-semi": `off`,
 		"no-mixed-spaces-and-tabs": [`warn`, `smart-tabs`],
-		"no-unused-vars": [`warn`, {ignoreRestSiblings: true}],
+		"no-unused-vars": [`warn`, {ignoreRestSiblings: true, args: `all`}],
 		quotes: [`warn`, `backtick`],
 	},
 	overrides: [
@@ -43,10 +43,11 @@ module.exports = {
 			rules: {
 				"@typescript-eslint/array-type": [`warn`, {default: `array-simple`}],
 				"@typescript-eslint/consistent-type-definitions": [`warn`, `type`],
-				"@typescript-eslint/consistent-type-imports": `warn`,
+				"@typescript-eslint/consistent-type-imports": [`warn`, {fixStyle: `inline-type-imports`}],
 				"@typescript-eslint/no-unnecessary-condition": `warn`,
 				"@typescript-eslint/no-unused-vars": [`warn`, {ignoreRestSiblings: true}],
 				"@typescript-eslint/quotes": [`warn`, `backtick`],
+				"import/consistent-type-specifier-style": [`warn`, `prefer-inline`],
 				"prefer-const": `off`,
 				quotes: `off`,
 			},
