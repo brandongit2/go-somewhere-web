@@ -24,8 +24,8 @@ export const linestringToMesh = (linestring: number[]) => {
 
 		prev_nextNormal = nextNormal
 
-		vertices.push(...currentVertex, 0, ...currentVertex, 0)
-		normals.push(...miter.normalized(), 0, ...miter.times(-1).normalized(), 0)
+		vertices.push(...currentVertex, ...currentVertex)
+		normals.push(...miter.normalized(), ...miter.times(-1).normalized())
 		miterLengths.push(miterLength, miterLength)
 	}
 

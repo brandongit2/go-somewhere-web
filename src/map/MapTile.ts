@@ -1,10 +1,10 @@
 import {MapLayer} from "./MapLayer"
 import {type TileManager} from "./TileManager"
-import {type MapTileType} from "@/app/types"
 import {type MapContext} from "@/map/MapContext"
 import {FlatMaterial} from "@/materials/FlatMaterial"
 import {FlatMesh} from "@/meshes/FlatMesh"
-import {tile2lat, tile2lng} from "@/util"
+import {type MapTileType} from "@/types"
+import {tileTolat, tileTolng} from "@/util"
 
 export class MapTile {
 	layers: MapLayer[] = []
@@ -15,7 +15,6 @@ export class MapTile {
 		public tileManager: TileManager,
 		public tile: MapTileType,
 	) {
-		console.log(tile.layers)
 		if (tile.layers.water)
 			this.layers.push(new MapLayer(mapContext, this, tile.layers.water, new FlatMaterial(mapContext, [0, 0, 1])))
 		if (tile.layers.admin)
@@ -36,10 +35,10 @@ export class MapTile {
 	draw(encoder: GPURenderPassEncoder) {
 		const {x, y, zoom} = this.tile
 		const zoomRounded = Math.floor(zoom)
-		const top = tile2lat(y, zoomRounded)
-		const right = tile2lng(x + 1, zoomRounded)
-		const bottom = tile2lat(y + 1, zoomRounded)
-		const left = tile2lng(x, zoomRounded)
+		const top = tileTolat(y, zoomRounded)
+		const right = tileTolng(x + 1, zoomRounded)
+		const bottom = tileTolat(y + 1, zoomRounded)
+		const left = tileTolng(x, zoomRounded)
 		this.mapContext.device.queue.writeBuffer(
 			this.bgMesh.vertexBuffer,
 			0,

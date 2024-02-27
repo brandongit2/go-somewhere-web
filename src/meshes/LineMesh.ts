@@ -1,6 +1,6 @@
 import vertShader from "./line-mesh.vert.wgsl"
 import {type Mesh} from "./Mesh"
-import {linestringToMesh} from "@/map/linestring-to-mesh"
+import {linestringToMesh} from "@/linestring-to-mesh"
 import {type MapContext} from "@/map/MapContext"
 import {type Material} from "@/materials/Material"
 
@@ -87,12 +87,12 @@ export class LineMesh implements Mesh<LineMeshArgs> {
 				entryPoint: `main`,
 				buffers: [
 					{
-						arrayStride: 3 * 4,
-						attributes: [{shaderLocation: 0, offset: 0, format: `float32x3`}],
+						arrayStride: 2 * 4,
+						attributes: [{shaderLocation: 0, offset: 0, format: `float32x2`}],
 					},
 					{
-						arrayStride: 3 * 4,
-						attributes: [{shaderLocation: 1, offset: 0, format: `float32x3`}],
+						arrayStride: 2 * 4,
+						attributes: [{shaderLocation: 1, offset: 0, format: `float32x2`}],
 					},
 					{
 						arrayStride: 4,
@@ -138,7 +138,7 @@ export class LineMesh implements Mesh<LineMeshArgs> {
 			.map((coords) => linestringToMesh(coords))
 			.reduce(
 				(acc, cur) => {
-					acc.indices.push(...cur.indices.map((i) => i + acc.vertices.length / 3))
+					acc.indices.push(...cur.indices.map((i) => i + acc.vertices.length / 2))
 					acc.vertices.push(...cur.vertices)
 					acc.normals.push(...cur.normals)
 					acc.miterLengths.push(...cur.miterLengths)

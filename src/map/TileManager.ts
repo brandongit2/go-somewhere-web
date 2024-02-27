@@ -9,8 +9,9 @@ import QueryStringAddon from "wretch/addons/queryString"
 
 import {type MapContext} from "./MapContext"
 import {MapTile} from "./MapTile"
-import {type MapLayerFeature, type MapTileLayer, type TileId} from "../app/types"
 import {MAPBOX_ACCESS_TOKEN} from "@/env"
+import {type MapLayerFeature, type MapTileLayer, type TileId} from "@/types"
+import {tileCoordToMercator} from "@/util"
 
 const fetchLimit = pLimit(20)
 
@@ -58,7 +59,9 @@ export class TileManager {
 							type: VectorTileFeature.types[feature.type],
 							id: feature.id,
 							properties: feature.properties,
-							geoJson: feature.toGeoJSON(x, y, zoom),
+							geometry: feature
+								.loadGeometry()
+								.map((mesh) => mesh.map((geom) => tileCoordToMercator(geom.x, geom.y, {zoom, x, y}, feature.extent))),
 						})
 					}
 

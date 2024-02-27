@@ -1,7 +1,7 @@
 import {TileManager} from "./TileManager"
-import {type TileId} from "../app/types"
+import {type TileId} from "../types"
 import {Mat4} from "@/math/Mat4"
-import {clamp, lat2tile, lng2tile} from "@/util"
+import {clamp, latTotile, lngTotile} from "@/util"
 
 const pxPerTile = 512
 
@@ -101,10 +101,10 @@ export class MapContext {
 	updateCamera = () => {
 		const zoomRounded = Math.round(this.zoom)
 		const degreesPerPx = 360 / pxPerTile / 2 ** this.zoom
-		const leftTile = Math.floor(lng2tile(clamp(this.lng - (this.width / 2) * degreesPerPx, -180, 180), zoomRounded))
-		const rightTile = Math.ceil(lng2tile(clamp(this.lng + (this.width / 2) * degreesPerPx, -180, 180), zoomRounded))
-		const topTile = Math.floor(lat2tile(clamp(this.lat + (this.height / 2) * degreesPerPx, -85, 85), zoomRounded))
-		const bottomTile = Math.ceil(lat2tile(clamp(this.lat - (this.height / 2) * degreesPerPx, -85, 85), zoomRounded))
+		const leftTile = Math.floor(lngTotile(clamp(this.lng - (this.width / 2) * degreesPerPx, -180, 180), zoomRounded))
+		const rightTile = Math.ceil(lngTotile(clamp(this.lng + (this.width / 2) * degreesPerPx, -180, 180), zoomRounded))
+		const topTile = Math.floor(latTotile(clamp(this.lat + (this.height / 2) * degreesPerPx, -85, 85), zoomRounded))
+		const bottomTile = Math.ceil(latTotile(clamp(this.lat - (this.height / 2) * degreesPerPx, -85, 85), zoomRounded))
 		const tilesInView: TileId[] = []
 		for (let x = clamp(leftTile, 0, 2 ** zoomRounded); x < clamp(rightTile, 0, 2 ** zoomRounded); x++) {
 			for (let y = clamp(topTile, 0, 2 ** zoomRounded); y < clamp(bottomTile, 0, 2 ** zoomRounded); y++) {

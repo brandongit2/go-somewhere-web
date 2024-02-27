@@ -1,8 +1,7 @@
 import {type VectorTileFeature} from "@mapbox/vector-tile"
-import {type Feature} from "geojson"
 
 export type TileId = `${number}/${number}/${number}`
-export type TileCoords = [number, number, number]
+export type TileCoords = {zoom: number; x: number; y: number}
 
 export type MapTileType = {
 	x: number
@@ -23,5 +22,5 @@ export type MapLayerFeature = {
 	type: (typeof VectorTileFeature.types)[number]
 	id: number
 	properties: Record<string, string | number | boolean>
-	geoJson: Feature
+	geometry: number[][][]
 }
