@@ -14,11 +14,11 @@ export class MapTile {
 		public tile: MapTileType,
 	) {
 		if (tile.layers.water)
-			this.layers.push(new MapLayer(mapContext, this, tile.layers.water, new FlatMaterial(mapContext, [0, 0, 1])))
+			this.layers.push(new MapLayer(mapContext, this, tile.layers.water, new FlatMaterial(mapContext, [0.1, 0.2, 0.9])))
 		if (tile.layers.admin)
-			this.layers.push(new MapLayer(mapContext, this, tile.layers.admin, new FlatMaterial(mapContext, [0.2, 0.2, 0.2])))
+			this.layers.push(new MapLayer(mapContext, this, tile.layers.admin, new FlatMaterial(mapContext, [0.9, 0.9, 0.9])))
 		if (tile.layers.road)
-			this.layers.push(new MapLayer(mapContext, this, tile.layers.road, new FlatMaterial(mapContext, [0.8, 0.7, 0])))
+			this.layers.push(new MapLayer(mapContext, this, tile.layers.road, new FlatMaterial(mapContext, [0.8, 0.7, 0.1])))
 
 		// this.bgMesh = new FlatMesh(
 		// 	mapContext,

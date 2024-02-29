@@ -17,7 +17,20 @@ const MapImpl = () => {
 	const mapContext = useRef<MapContext | null>(null)
 
 	const handleResize = useCallback(() => {
-		if (!mapRoot.current) return
+		if (!mapRoot.current || !mapContext.current) return
+
+		const {canvasElement, device} = mapContext.current
+
+		mapContext.current.width = clamp(
+			canvasElement.getBoundingClientRect().width,
+			1,
+			device.limits.maxTextureDimension2D,
+		)
+		mapContext.current.height = clamp(
+			canvasElement.getBoundingClientRect().height,
+			1,
+			device.limits.maxTextureDimension2D,
+		)
 		mapRoot.current.updateCamera()
 	}, [])
 	useEffect(() => {

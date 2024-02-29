@@ -16,8 +16,8 @@ export const linestringToMesh = (linestring: MercatorCoord[]) => {
 	let oldNextNormal: Vec3 | undefined
 	for (let i = 0; i < linestring3d.length; i++) {
 		// The current vertex has a vector pointing to the previous vertex and/or a vector pointing to the next vertex. For
-		// these vectors, we find a vector perpendicular to them, tangent to the globe. The miter is then the bisector of
-		// these two vectors, scaled by the miter length.
+		// these vectors, we find a vector perpendicular to them, tangent to the globe. The mitre is then the bisector of
+		// these two vectors, scaled by the mitre length.
 
 		const currentVertex = linestring3d[i]!
 		const nextVertex = linestring3d[i + 1]

@@ -62,7 +62,7 @@ export class MapLayer {
 			}
 		}
 
-		if (lines.length > 0) this.meshes.push(new LineMesh(mapContext, {vertices: lines, thickness: 0.004}, material))
+		if (lines.length > 0) this.meshes.push(new LineMesh(mapContext, {vertices: lines, thickness: 0.001}, material))
 		if (polygons.vertices.length > 0)
 			this.meshes.push(
 				new GlobeProjectedMesh(mapContext, {vertices: polygons.vertices, indices: polygons.indices}, material),

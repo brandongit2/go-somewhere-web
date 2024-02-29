@@ -1,7 +1,7 @@
 import {MapContext} from "@/map/MapContext"
 import {Mat4} from "@/math/Mat4"
 import {Vec3} from "@/math/Vec3"
-import {clamp, latLngToEcef, tileIdStrToArr} from "@/util"
+import {latLngToEcef, tileIdStrToArr} from "@/util"
 
 const CONSTRUCTOR_KEY = Symbol(`MapRoot constructor key`)
 
@@ -89,15 +89,30 @@ export class MapRoot {
 	updateCamera = () => {
 		const {tileManager, device, viewMatrixBuffer, lat, lng, width, height} = this.mapContext
 
-		tileManager.setTilesInView([`0/0/0`])
+		tileManager.setTilesInView([
+			`2/0/0`,
+			`2/0/1`,
+			`2/0/2`,
+			`2/0/3`,
+			`2/1/0`,
+			`2/1/1`,
+			`2/1/2`,
+			`2/1/3`,
+			`2/2/0`,
+			`2/2/1`,
+			`2/2/2`,
+			`2/2/3`,
+			`2/3/0`,
+			`2/3/1`,
+			`2/3/2`,
+			`2/3/3`,
+		])
 
-		this.mapContext.width = clamp(width, 1, device.limits.maxTextureDimension2D)
-		this.mapContext.height = clamp(height, 1, device.limits.maxTextureDimension2D)
-		this.mapContext.canvasElement.width = this.mapContext.width * devicePixelRatio
-		this.mapContext.canvasElement.height = this.mapContext.height * devicePixelRatio
+		this.mapContext.canvasElement.width = width * devicePixelRatio
+		this.mapContext.canvasElement.height = height * devicePixelRatio
 		this.mapContext.createDepthTexture()
 
-		let viewMatrix = Mat4.makePerspective(75, this.mapContext.width / this.mapContext.height, 0.1)
+		let viewMatrix = Mat4.makePerspective(75, width / height, 0.1)
 		const ecefPos = latLngToEcef(lat, lng, 1)
 		const cameraPos = new Vec3(ecefPos[1], ecefPos[2], ecefPos[0])
 		const rotationMatrix = Mat4.lookAt(cameraPos, new Vec3(0, 0, 0), new Vec3(0, 1, 0))
