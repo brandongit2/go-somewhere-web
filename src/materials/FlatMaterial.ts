@@ -9,7 +9,7 @@ export class FlatMaterial implements Material {
 	colorUniformBuffer: GPUBuffer
 
 	constructor(
-		public mapContext: MapContext,
+		private mapContext: MapContext,
 		color: [number, number, number],
 	) {
 		const {device} = mapContext

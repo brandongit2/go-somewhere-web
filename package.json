@@ -21,6 +21,7 @@
 		"wretch": "2.8.0"
 	},
 	"devDependencies": {
+		"@playwright/test": "1.42.0",
 		"@types/earcut": "2.1.4",
 		"@types/geojson": "7946.0.14",
 		"@types/lodash": "4.14.202",
@@ -39,6 +40,7 @@
 		"postcss-load-config": "5.0.3",
 		"prettier-plugin-tailwindcss": "0.5.11",
 		"tailwindcss": "3.4.1",
+		"type-fest": "4.10.3",
 		"typescript": "5.3.3"
 	}
 }

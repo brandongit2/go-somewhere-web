@@ -1,46 +1,38 @@
-import vertShader from "./flat-mesh.vert.wgsl"
+import vertShader from "./globe-projected-mesh.vert.wgsl"
 import {type Mesh} from "./Mesh"
-import {FOUR_BYTES_PER_FLOAT, FOUR_BYTES_PER_INT32, SIXTEEN_NUMBERS_PER_MAT4, THREE_NUMBERS_PER_3D_COORD} from "@/const"
+import {FOUR_BYTES_PER_FLOAT, FOUR_BYTES_PER_INT32, THREE_NUMBERS_PER_3D_COORD} from "@/const"
 import {type MapContext} from "@/map/MapContext"
 import {type Material} from "@/materials/Material"
-import {Mat4} from "@/math/Mat4"
-import {type EcefCoord, type Coord3d} from "@/types"
+import {type MercatorCoord} from "@/types"
+import {mercatorToEcef} from "@/util"
 
-type FlatMeshArgs = {
-	vertices: EcefCoord[]
+type GlobeProjectedMeshArgs = {
+	vertices: MercatorCoord[]
 	indices: number[]
-	pos?: Coord3d
 }
 
-export class FlatMesh implements Mesh {
+export class GlobeProjectedMesh implements Mesh {
 	renderPipeline: GPURenderPipeline
 	bindGroup: GPUBindGroup
-	modelMatrixBuffer: GPUBuffer
 	vertexBuffer: GPUBuffer
 	indexBuffer: GPUBuffer
 
 	constructor(
 		private mapContext: MapContext,
-		args: FlatMeshArgs,
+		args: GlobeProjectedMeshArgs,
 		public material: Material,
 	) {
 		const {device, presentationFormat} = mapContext
 
-		this.modelMatrixBuffer = null!
 		this.vertexBuffer = null!
 		this.indexBuffer = null!
 		this.set(args) // Above lines are to appease TypeScript; this line is the real initialization
 
 		const bindGroupLayout = device.createBindGroupLayout({
-			label: `flat mesh bind group layout`,
+			label: `globe-projected mesh bind group layout`,
 			entries: [
 				{
 					binding: 0,
-					visibility: GPUShaderStage.VERTEX,
-					buffer: {type: `uniform`},
-				},
-				{
-					binding: 1,
 					visibility: GPUShaderStage.VERTEX,
 					buffer: {type: `uniform`},
 				},
@@ -48,32 +40,28 @@ export class FlatMesh implements Mesh {
 		})
 
 		const layout = device.createPipelineLayout({
-			label: `flat mesh pipeline layout`,
+			label: `globe-projected mesh pipeline layout`,
 			bindGroupLayouts: [bindGroupLayout, material.bindGroupLayout],
 		})
 
 		this.bindGroup = device.createBindGroup({
-			label: `flat mesh bind group`,
+			label: `globe-projected mesh bind group`,
 			layout: bindGroupLayout,
 			entries: [
 				{
 					binding: 0,
 					resource: {buffer: this.mapContext.viewMatrixBuffer},
 				},
-				{
-					binding: 1,
-					resource: {buffer: this.modelMatrixBuffer},
-				},
 			],
 		})
 
 		const vertShaderModule = device.createShaderModule({
-			label: `flat mesh vertex shader`,
+			label: `globe-projected mesh vertex shader`,
 			code: vertShader,
 		})
 
 		this.renderPipeline = device.createRenderPipeline({
-			label: `flat mesh render pipeline`,
+			label: `globe-projected mesh render pipeline`,
 			layout,
 			vertex: {
 				module: vertShaderModule,
@@ -89,6 +77,9 @@ export class FlatMesh implements Mesh {
 				module: material.fragShaderModule,
 				entryPoint: `main`,
 				targets: [{format: presentationFormat}],
+			},
+			primitive: {
+				cullMode: `back`,
 			},
 			depthStencil: {
 				depthWriteEnabled: true,
@@ -108,25 +99,19 @@ export class FlatMesh implements Mesh {
 		pass.drawIndexed(this.indexBuffer.size / FOUR_BYTES_PER_INT32)
 	}
 
-	set = (args: FlatMeshArgs) => {
-		;(this.modelMatrixBuffer as typeof this.modelMatrixBuffer | undefined)?.destroy()
+	set = (args: GlobeProjectedMeshArgs) => {
 		;(this.vertexBuffer as typeof this.vertexBuffer | undefined)?.destroy()
 		;(this.indexBuffer as typeof this.indexBuffer | undefined)?.destroy()
 
 		const {device} = this.mapContext
 
-		const pos = args.pos ?? ([0, 0, 0] as Coord3d)
-		this.modelMatrixBuffer = device.createBuffer({
-			size: SIXTEEN_NUMBERS_PER_MAT4 * FOUR_BYTES_PER_FLOAT,
-			usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-		})
-		device.queue.writeBuffer(this.modelMatrixBuffer, 0, new Float32Array(Mat4.makeTranslation(pos)))
+		const vertices3d = args.vertices.map((v) => mercatorToEcef(v))
 
 		this.vertexBuffer = device.createBuffer({
-			size: args.vertices.length * THREE_NUMBERS_PER_3D_COORD * FOUR_BYTES_PER_FLOAT,
+			size: vertices3d.length * THREE_NUMBERS_PER_3D_COORD * FOUR_BYTES_PER_FLOAT,
 			usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
 		})
-		device.queue.writeBuffer(this.vertexBuffer, 0, new Float32Array(args.vertices.flatMap((v) => v)))
+		device.queue.writeBuffer(this.vertexBuffer, 0, new Float32Array(vertices3d.flatMap((v) => [v[1], v[2], v[0]])))
 
 		this.indexBuffer = device.createBuffer({
 			size: args.indices.length * FOUR_BYTES_PER_INT32,

@@ -7,19 +7,18 @@ import AbortAddon from "wretch/addons/abort"
 // eslint-disable-next-line import/no-named-as-default -- `QueryStringAddon` in this import is an interface, not what we want
 import QueryStringAddon from "wretch/addons/queryString"
 
-import {type MapContext} from "./MapContext"
 import {MapTile} from "./MapTile"
 import {MAPBOX_ACCESS_TOKEN} from "@/env"
-import {type MapLayerFeature, type MapTileLayer, type TileId} from "@/types"
-import {tileCoordToMercator} from "@/util"
+import {type MapContext} from "@/map/MapContext"
+import {type MapLayerFeature, type MapTileLayer, type TileIdArr, type TileIdStr, type TileCoord} from "@/types"
+import {tileCoordToMercator, tileIdStrToArr} from "@/util"
 
 const fetchLimit = pLimit(20)
 
 export class TileManager {
-	private _tilesInView = new Set<TileId>()
-	tileCache = new Map<TileId, MapTile>()
-	tilesBeingFetched = new Map<TileId, [AbortController, Promise<MapTile | null>]>()
-	tilesAborted = new Set<TileId>()
+	private _tilesInView = new Set<TileIdStr>()
+	tileCache = new Map<TileIdStr, MapTile>()
+	tilesBeingFetched = new Map<TileIdStr, [AbortController, Promise<MapTile | null>]>()
 
 	constructor(private mapContext: MapContext) {}
 
@@ -27,14 +26,11 @@ export class TileManager {
 		return this._tilesInView
 	}
 
-	static tileIdToCoords = (tileId: TileId) =>
-		tileId.split(`/`).map((coord) => parseInt(coord)) as [number, number, number]
-
-	fetchTile = async (tileId: TileId): Promise<MapTile | null> => {
+	fetchTile = async (tileId: TileIdStr): Promise<MapTile | null> => {
 		if (this.tileCache.has(tileId)) return this.tileCache.get(tileId)!
 		if (this.tilesBeingFetched.has(tileId)) return this.tilesBeingFetched.get(tileId)![1]
 
-		const [zoom, x, y] = TileManager.tileIdToCoords(tileId)
+		const [zoom, x, y] = tileIdStrToArr(tileId)
 		const controller = new AbortController()
 
 		const fetchPromise = fetchLimit(
@@ -61,7 +57,11 @@ export class TileManager {
 							properties: feature.properties,
 							geometry: feature
 								.loadGeometry()
-								.map((mesh) => mesh.map((geom) => tileCoordToMercator(geom.x, geom.y, {zoom, x, y}, feature.extent))),
+								.map((ring) =>
+									ring.map((coord) =>
+										tileCoordToMercator([coord.x, coord.y] as TileCoord, [zoom, x, y] as TileIdArr, feature.extent),
+									),
+								),
 						})
 					}
 
@@ -89,11 +89,11 @@ export class TileManager {
 		return fetchPromise
 	}
 
-	fetchTileFromCache = (tileId: TileId): MapTile | undefined => this.tileCache.get(tileId)
+	fetchTileFromCache = (tileId: TileIdStr): MapTile | undefined => this.tileCache.get(tileId)
 
-	fetchTiles = (tileIds: TileId[]): Array<Promise<MapTile | null>> => tileIds.map((tileId) => this.fetchTile(tileId))
+	fetchTiles = (tileIds: TileIdStr[]): Array<Promise<MapTile | null>> => tileIds.map((tileId) => this.fetchTile(tileId))
 
-	private setTilesInViewImpl = (tileIds: TileId[]) => {
+	private setTilesInViewImpl = (tileIds: TileIdStr[]) => {
 		this._tilesInView = new Set(tileIds)
 
 		// Abort fetching tiles that are no longer in view

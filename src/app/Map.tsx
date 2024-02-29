@@ -4,31 +4,21 @@ import {motion, useAnimationFrame, useMotionValue, useTransform} from "framer-mo
 import {memo, useCallback, useEffect, useRef} from "react"
 import invariant from "tiny-invariant"
 
-import {MapContext} from "./MapContext"
 import {useAsyncError} from "@/hooks/use-async-error"
+import {type MapContext} from "@/map/MapContext"
+import {MapRoot} from "@/map/MapRoot"
 import {Vec2} from "@/math/Vec2"
 import {clamp} from "@/util"
 
-let didInit = false
-
-const MapRootImpl = () => {
+const MapImpl = () => {
 	const throwError = useAsyncError()
 	const canvasRef = useRef<HTMLCanvasElement>(null)
+	const mapRoot = useRef<MapRoot | null>(null)
 	const mapContext = useRef<MapContext | null>(null)
 
 	const handleResize = useCallback(() => {
-		if (!mapContext.current) return
-		const {device, canvasElement} = mapContext.current
-
-		const width = canvasElement.getBoundingClientRect().width
-		const height = canvasElement.getBoundingClientRect().height
-		mapContext.current.width = width
-		mapContext.current.height = height
-
-		canvasElement.width = clamp(width, 1, device.limits.maxTextureDimension2D) * devicePixelRatio
-		canvasElement.height = clamp(height, 1, device.limits.maxTextureDimension2D) * devicePixelRatio
-
-		mapContext.current.updateCamera()
+		if (!mapRoot.current) return
+		mapRoot.current.updateCamera()
 	}, [])
 	useEffect(() => {
 		window.addEventListener(`resize`, handleResize)
@@ -36,17 +26,19 @@ const MapRootImpl = () => {
 	}, [handleResize])
 
 	useEffect(() => {
-		if (didInit) return
 		invariant(canvasRef.current)
 
-		MapContext.create(canvasRef.current)
-			.then((context) => {
+		MapRoot.create(canvasRef.current)
+			.then(([root, context]) => {
+				mapRoot.current = root
 				mapContext.current = context
 				handleResize()
 			})
 			.catch(throwError)
 
-		didInit = true
+		return () => {
+			if (mapRoot.current) mapRoot.current.destroy()
+		}
 	}, [handleResize, throwError])
 
 	// Render
@@ -62,7 +54,7 @@ const MapRootImpl = () => {
 	})
 	const zoomChangeAmount = useRef(0)
 	useAnimationFrame(() => {
-		if (!mapContext.current) return
+		if (!mapRoot.current || !mapContext.current) return
 		const {height, width, lng, lat, zoom, degreesPerPx} = mapContext.current
 
 		const mp = mousePos.get()
@@ -75,11 +67,11 @@ const MapRootImpl = () => {
 			mapContext.current.lat = clamp(lat - (mp[1] - 0.5 * height) * (1 - 1 / scaleChange) * degreesPerPx, -85, 85)
 			mapContext.current.zoom = newZoom
 
-			mapContext.current.updateCamera()
+			mapRoot.current.updateCamera()
 			zoomChangeAmount.current = 0
 		}
 
-		mapContext.current.render()
+		mapRoot.current.render()
 	})
 
 	return (
@@ -90,12 +82,12 @@ const MapRootImpl = () => {
 				mousePos.set([event.clientX, event.clientY])
 			}}
 			onPan={(event, info) => {
-				if (!mapContext.current) return
-				const {lng, lat, degreesPerPx, updateCamera} = mapContext.current
+				if (!mapRoot.current || !mapContext.current) return
+				const {lng, lat, degreesPerPx} = mapContext.current
 
-				mapContext.current.lng = clamp(lng - info.delta.x * degreesPerPx, -180, 180)
+				mapContext.current.lng = ((lng - info.delta.x * degreesPerPx + 180) % 360) - 180
 				mapContext.current.lat = clamp(lat + info.delta.y * degreesPerPx, -85, 85)
-				updateCamera()
+				mapRoot.current.updateCamera()
 			}}
 			onWheel={(event) => {
 				zoomChangeAmount.current += event.deltaY * 0.01
@@ -104,4 +96,4 @@ const MapRootImpl = () => {
 	)
 }
 
-export const MapRoot = memo(MapRootImpl)
+export const Map = memo(MapImpl)

@@ -37,7 +37,11 @@ export class Vec2 {
 		yield this.y
 	}
 
+	as = <T extends [number, number]>() => [this.x, this.y] as T
+
 	toString = () => `(${this.x}, ${this.y})`
+
+	toTuple = () => [this.x, this.y] as [number, number]
 
 	get length() {
 		if (this.cache.length === undefined) this.cache.length = Vec2.len(this)

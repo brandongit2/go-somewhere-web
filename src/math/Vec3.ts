@@ -1,11 +1,23 @@
 import {clamp} from "@/util"
 
 export class Vec3 {
-	constructor(
-		private _x: number,
-		private _y: number,
-		private _z: number,
-	) {}
+	private _x: number
+	private _y: number
+	private _z: number
+
+	constructor(x: number, y: number, z: number)
+	constructor(xyz: [number, number, number])
+	constructor(xOrXyz: number | [number, number, number], y?: number, z?: number) {
+		if (typeof xOrXyz === `number`) {
+			this._x = xOrXyz
+			this._y = y!
+			this._z = z!
+		} else {
+			this._x = xOrXyz[0]
+			this._y = xOrXyz[1]
+			this._z = xOrXyz[2]
+		}
+	}
 
 	private cache = {
 		length: undefined as number | undefined,
@@ -48,7 +60,11 @@ export class Vec3 {
 		yield this.z
 	}
 
+	as = <T extends [number, number, number]>() => [this.x, this.y, this.z] as T
+
 	toString = () => `(${this.x}, ${this.y}, ${this.z})`
+
+	toTuple = () => [this.x, this.y, this.z] as [number, number, number]
 
 	get length() {
 		if (this.cache.length === undefined) this.cache.length = Vec3.len(this)

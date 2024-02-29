@@ -1,35 +1,53 @@
-import {Vec2} from "@/math/Vec2"
-import {roughEq} from "@/util"
+import {Vec3} from "@/math/Vec3"
+import {type Coord3d, type MercatorCoord, type WorldCoord} from "@/types"
+import {mercatorToEcef, roughEq} from "@/util"
 
-export const linestringToMesh = (linestring: number[]) => {
-	const vertices: number[] = []
-	const normals: number[] = []
+export const linestringToMesh = (linestring: MercatorCoord[]) => {
+	const linestring3d = linestring
+		.map((vertex) => new Vec3(mercatorToEcef(vertex)))
+		.map((vertex) => new Vec3([vertex.y, vertex.z, vertex.x]))
+
+	const vertices: WorldCoord[] = []
+	const normals: Coord3d[] = []
 	const miterLengths: number[] = []
 	let indices: number[] = []
-	if (linestring.length < 4) return {vertices, normals, miterLengths, indices}
+	if (linestring3d.length < 2) return {vertices, normals, miterLengths, indices}
 
-	let prev_nextNormal: Vec2 | undefined
-	for (let i = 0; i < linestring.length; i += 2) {
-		const currentVertex = new Vec2(linestring[i]!, linestring[i + 1]!)
-		const nextVertex = i === linestring.length - 2 ? undefined : new Vec2(linestring[i + 2]!, linestring[i + 3]!)
+	let oldNextNormal: Vec3 | undefined
+	for (let i = 0; i < linestring3d.length; i++) {
+		// The current vertex has a vector pointing to the previous vertex and/or a vector pointing to the next vertex. For
+		// these vectors, we find a vector perpendicular to them, tangent to the globe. The miter is then the bisector of
+		// these two vectors, scaled by the miter length.
 
-		let toNext = nextVertex && Vec2.sub(nextVertex, currentVertex).normalized()
-		let nextNormal = toNext ? new Vec2(-toNext.y, toNext.x) : prev_nextNormal!
-		let prevNormal = prev_nextNormal ?? nextNormal
+		const currentVertex = linestring3d[i]!
+		const nextVertex = linestring3d[i + 1]
+		const sphereNormal = currentVertex
 
-		const angle = Vec2.angleBetween(prevNormal, nextNormal)
+		let toNext = nextVertex && Vec3.sub(nextVertex, currentVertex)
+
+		let nextNormal: Vec3
+		if (toNext) nextNormal = Vec3.cross(toNext, sphereNormal)
+		// If there is no next vertex, pretend there was one in the same direction as `toNext` from the previous vertex
+		else nextNormal = oldNextNormal!
+
+		let prevNormal: Vec3
+		if (oldNextNormal) prevNormal = oldNextNormal
+		// If there is no previous vertex, pretend there was one in the opposite direction as `toNext`
+		else prevNormal = nextNormal
+
+		const angle = Vec3.angleBetween(prevNormal, nextNormal)
 		let miterLength = 1
 		if (!roughEq(angle, Math.PI)) miterLength = 1 / Math.cos(angle / 2)
-		const miter = Vec2.bisect(prevNormal, nextNormal, miterLength)
+		const miter = Vec3.bisect(prevNormal, nextNormal, miterLength)
 
-		prev_nextNormal = nextNormal
+		oldNextNormal = nextNormal
 
-		vertices.push(...currentVertex, ...currentVertex)
-		normals.push(...miter.normalized(), ...miter.times(-1).normalized())
+		vertices.push(currentVertex.as<WorldCoord>(), currentVertex.as<WorldCoord>())
+		normals.push(miter.normalized().toTuple(), miter.times(-1).normalized().toTuple())
 		miterLengths.push(miterLength, miterLength)
 	}
 
-	for (let i = 0; i < linestring.length - 2; i += 2) {
+	for (let i = 0; i < vertices.length - 2; i += 2) {
 		indices.push(i, i + 1, i + 2, i + 1, i + 3, i + 2)
 	}
 
