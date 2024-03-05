@@ -6,8 +6,8 @@ import {Vec3} from "@/math/Vec3"
 import {Vec4} from "@/math/Vec4"
 import {LineMesh} from "@/meshes/LineMesh"
 import {type Mesh} from "@/meshes/Mesh"
-import {type LngLat, type TileIdArr, type WorldCoord} from "@/types"
-import {degToRad, lngLatToWorld, mercatorYToLat, tileIdStrToArr, tileToLngLat} from "@/util"
+import {type LngLat, type TileCoord, type TileIdArr, type WorldCoord} from "@/types"
+import {degToRad, lngLatToWorld, tileIdStrToArr, tileToLngLat} from "@/util"
 
 const CONSTRUCTOR_KEY = Symbol(`MapRoot constructor key`)
 
@@ -116,42 +116,6 @@ export class MapRoot {
 
 		tileManager.setTilesInView([`0/0/0`])
 
-		const vertices: WorldCoord[][] = []
-		const zoomRounded = Math.ceil(zoom)
-
-		// Longitude lines
-		for (let i = 0; i < 2 ** zoomRounded; i++) {
-			let theta = i * (360 / 2 ** zoomRounded) - 90
-			let ring = []
-			for (let j = 0; j <= 90; j++) {
-				ring.push([
-					Math.sin(degToRad(j * 2)) * Math.cos(degToRad(theta)) * 1.001,
-					Math.cos(degToRad(j * 2)) * 1.001,
-					Math.sin(degToRad(j * 2)) * Math.sin(degToRad(theta)) * 1.001,
-				] as WorldCoord)
-			}
-			vertices.push(ring)
-		}
-
-		// Latitude lines
-		for (let i = 0; i <= 2 ** zoomRounded; i++) {
-			let phi = mercatorYToLat(i / 2 ** zoomRounded)
-			let ring = []
-			for (let j = 0; j <= 90; j++) {
-				ring.push([
-					Math.cos(degToRad(phi)) * Math.cos(degToRad(j * 4)) * 1.001,
-					Math.sin(degToRad(phi)) * 1.001,
-					Math.cos(degToRad(phi)) * Math.sin(degToRad(j * 4)) * 1.001,
-				] as WorldCoord)
-			}
-			vertices.push(ring)
-		}
-
-		;(this.extraObjects[0] as LineMesh).set({
-			vertices,
-			thickness: 0.01,
-		})
-
 		this.mapContext.canvasElement.width = width * devicePixelRatio
 		this.mapContext.canvasElement.height = height * devicePixelRatio
 		this.mapContext.createDepthTexture()
@@ -165,23 +129,28 @@ export class MapRoot {
 
 		const referenceTileSize = (PX_PER_TILE / (width * devicePixelRatio)) * 2 * Math.PI
 
+		const visibleTiles = processTile(
+			[0, 0, 0] as TileIdArr,
+			viewMatrix,
+			[lng, lat] as LngLat,
+			cameraPos,
+			width,
+			referenceTileSize,
+		)
+		console.log(visibleTiles)
 		;(this.extraObjects[1] as LineMesh).set({
-			vertices: [
-				[
-					[-referenceTileSize / 2, 0, 1],
-					[referenceTileSize / 2, 0, 1],
-				] as WorldCoord[],
-				[
-					[0, -referenceTileSize / 2, 1],
-					[0, referenceTileSize / 2, 1],
-				] as WorldCoord[],
-			],
+			vertices: visibleTiles.map(
+				([zoom, x, y]) =>
+					[
+						lngLatToWorld(tileToLngLat([zoom, x, y] as TileIdArr)),
+						lngLatToWorld(tileToLngLat([zoom, x + 1, y] as TileIdArr)),
+						lngLatToWorld(tileToLngLat([zoom, x + 1, y + 1] as TileIdArr)),
+						lngLatToWorld(tileToLngLat([zoom, x, y + 1] as TileIdArr)),
+						lngLatToWorld(tileToLngLat([zoom, x, y] as TileIdArr)),
+					] as WorldCoord[],
+			),
 			thickness: 0.01,
 		})
-
-		let visibleTiles: TileIdArr[] = []
-
-		processTile([1, 0, 0] as TileIdArr, viewMatrix, cameraPos, width, referenceTileSize)
 
 		device.queue.writeBuffer(viewMatrixBuffer, 0, new Float32Array(viewMatrix))
 	}
@@ -190,119 +159,158 @@ export class MapRoot {
 const processTile = (
 	tile: TileIdArr,
 	viewMatrix: Mat4,
+	lngLat: LngLat,
 	cameraPos: Vec3,
 	screenWidth: number,
 	referenceTileSize: number,
-	recursionLimit = tile[0] + 7,
+	recursionLimit = tile[0] + 12,
 	knownToBeInView = false,
-	// eslint-disable-next-line @typescript-eslint/ban-ts-comment
-	// @ts-ignore
 ): TileIdArr[] => {
-	if (tile[0] >= recursionLimit) return []
+	if (tile[0] > recursionLimit) return []
 
 	const topLeft = tileToLngLat([tile[0], tile[1], tile[2]] as TileIdArr)
 	const topRight = tileToLngLat([tile[0], tile[1] + 1, tile[2]] as TileIdArr)
 	const bottomLeft = tileToLngLat([tile[0], tile[1], tile[2] + 1] as TileIdArr)
 	const bottomRight = tileToLngLat([tile[0], tile[1] + 1, tile[2] + 1] as TileIdArr)
 
-	const topLeftWorldPos = new Vec3(lngLatToWorld(topLeft))
-	const topRightWorldPos = new Vec3(lngLatToWorld(topRight))
-	const bottomLeftWorldPos = new Vec3(lngLatToWorld(bottomLeft))
-	const bottomRightWorldPos = new Vec3(lngLatToWorld(bottomRight))
-
-	const topLeftProjected = Vec4.perspectiveDivide(Vec4.applyMat4(new Vec4(...topLeftWorldPos.toTuple(), 1), viewMatrix))
-	const topRightProjected = Vec4.perspectiveDivide(
-		Vec4.applyMat4(new Vec4(...topRightWorldPos.toTuple(), 1), viewMatrix),
-	)
-	const bottomLeftProjected = Vec4.perspectiveDivide(
-		Vec4.applyMat4(new Vec4(...bottomLeftWorldPos.toTuple(), 1), viewMatrix),
-	)
-	const bottomRightProjected = Vec4.perspectiveDivide(
-		Vec4.applyMat4(new Vec4(...bottomRightWorldPos.toTuple(), 1), viewMatrix),
-	)
-
 	const earthRadius = 1
 	const cameraDistance = cameraPos.length
 	const toCamera = cameraPos.normalized()
 	const cosThetaForHorizon = earthRadius / (earthRadius + cameraDistance)
 
-	const calcTileSize = (pointLngLat: LngLat) => {
-		const worldPos = new Vec3(lngLatToWorld(pointLngLat))
-		const west = Vec3.cross(worldPos, new Vec3(0, 1, 0))
+	const calcTileSize = (pointWorldPos: Vec3, latitude: number) => {
+		const zoomFactor = 2 ** -Math.ceil(tile[0])
+		const west = Vec3.cross(pointWorldPos, new Vec3(0, 1, 0))
 			.normalized()
-			.times((referenceTileSize / 2) * Math.cos(degToRad(pointLngLat[1])))
-		const north = Vec3.cross(west, worldPos)
+			.times((referenceTileSize / 2) * zoomFactor * Math.cos(degToRad(latitude)))
+		const north = Vec3.cross(west, pointWorldPos)
 			.normalized()
-			.times(referenceTileSize / 2)
+			.times((referenceTileSize / 2) * zoomFactor)
 
-		const centerProjected = Vec4.perspectiveDivide(Vec4.applyMat4(new Vec4(...worldPos.toTuple(), 1), viewMatrix))
+		const centerProjected = Vec4.perspectiveDivide(Vec4.applyMat4(new Vec4(...pointWorldPos.toTuple(), 1), viewMatrix))
 		const westProjected = Vec4.perspectiveDivide(
-			Vec4.applyMat4(new Vec4(...Vec3.add(worldPos, west).toTuple(), 1), viewMatrix),
+			Vec4.applyMat4(new Vec4(...Vec3.add(pointWorldPos, west).toTuple(), 1), viewMatrix),
 		)
 		const northProjected = Vec4.perspectiveDivide(
-			Vec4.applyMat4(new Vec4(...Vec3.add(worldPos, north).toTuple(), 1), viewMatrix),
+			Vec4.applyMat4(new Vec4(...Vec3.add(pointWorldPos, north).toTuple(), 1), viewMatrix),
 		)
 
-		let width = Math.abs((centerProjected.x - westProjected.x) * 2)
-		let height = Math.abs((northProjected.y - centerProjected.y) * 2)
-
-		return [(width * screenWidth) / PX_PER_TILE, (height * screenWidth) / PX_PER_TILE]
+		let width = Math.abs((centerProjected.x - westProjected.x) * 2) * ((screenWidth * devicePixelRatio) / PX_PER_TILE)
+		let height = Math.abs((northProjected.y - centerProjected.y) * 2) * ((screenWidth * devicePixelRatio) / PX_PER_TILE)
+		return (width + height) / 2
 	}
 
-	const isBeyondHorizon = (lngLat: LngLat) => {
-		const toPoint = new Vec3(lngLatToWorld(lngLat, earthRadius)).normalized()
-		const cosThetaForPoint = Vec3.dot(toCamera, toPoint)
-		return cosThetaForPoint < cosThetaForHorizon
+	const topLeftWorldPos = new Vec3(lngLatToWorld(topLeft))
+	const topRightWorldPos = new Vec3(lngLatToWorld(topRight))
+	const bottomLeftWorldPos = new Vec3(lngLatToWorld(bottomLeft))
+	const bottomRightWorldPos = new Vec3(lngLatToWorld(bottomRight))
+	const topLeftTileSize = calcTileSize(topLeftWorldPos, topLeft[1])
+	const topRightTileSize = calcTileSize(topRightWorldPos, topRight[1])
+	const bottomLeftTileSize = calcTileSize(bottomLeftWorldPos, bottomLeft[1])
+	const bottomRightTileSize = calcTileSize(bottomRightWorldPos, bottomRight[1])
+	const maxTileSize = Math.max(topLeftTileSize, topRightTileSize, bottomLeftTileSize, bottomRightTileSize)
+
+	let isTileInView = false
+	if (!knownToBeInView) {
+		const topLeftProjected = Vec4.perspectiveDivide(
+			Vec4.applyMat4(new Vec4(...topLeftWorldPos.toTuple(), 1), viewMatrix),
+		)
+		const topRightProjected = Vec4.perspectiveDivide(
+			Vec4.applyMat4(new Vec4(...topRightWorldPos.toTuple(), 1), viewMatrix),
+		)
+		const bottomLeftProjected = Vec4.perspectiveDivide(
+			Vec4.applyMat4(new Vec4(...bottomLeftWorldPos.toTuple(), 1), viewMatrix),
+		)
+		const bottomRightProjected = Vec4.perspectiveDivide(
+			Vec4.applyMat4(new Vec4(...bottomRightWorldPos.toTuple(), 1), viewMatrix),
+		)
+
+		const isBeyondHorizon = (lngLat: LngLat) => {
+			const toPoint = new Vec3(lngLatToWorld(lngLat, earthRadius)).normalized()
+			const cosThetaForPoint = Vec3.dot(toCamera, toPoint)
+			return cosThetaForPoint < cosThetaForHorizon
+		}
+		const isInViewFrustum = (projectedPos: Vec3) =>
+			projectedPos.x >= -1 && projectedPos.x <= 1 && projectedPos.y >= -1 && projectedPos.y <= 1
+
+		const isTopLeftBeyondHorizon = isBeyondHorizon(topLeft)
+		const isTopRightBeyondHorizon = isBeyondHorizon(topRight)
+		const isBottomLeftBeyondHorizon = isBeyondHorizon(bottomLeft)
+		const isBottomRightBeyondHorizon = isBeyondHorizon(bottomRight)
+		const isTopLeftInView = isInViewFrustum(topLeftProjected) && !isTopLeftBeyondHorizon
+		const isTopRightInView = isInViewFrustum(topRightProjected) && !isTopRightBeyondHorizon
+		const isBottomLeftInView = isInViewFrustum(bottomLeftProjected) && !isBottomLeftBeyondHorizon
+		const isBottomRightInView = isInViewFrustum(bottomRightProjected) && !isBottomRightBeyondHorizon
+		let couldTileBeInView = isTopLeftInView || isTopRightInView || isBottomLeftInView || isBottomRightInView
+		isTileInView = isTopLeftInView && isTopRightInView && isBottomLeftInView && isBottomRightInView
+
+		let closestPoint: TileCoord
+		if (lngLat[0] < tile[1]) {
+			if (lngLat[1] < tile[2]) closestPoint = [tile[1], tile[2]] as TileCoord
+			else if (lngLat[1] > tile[2] + 1) closestPoint = [tile[1], tile[2] + 1] as TileCoord
+			else closestPoint = [tile[1], lngLat[1]] as TileCoord
+		} else if (lngLat[0] > tile[1] + 1) {
+			if (lngLat[1] < tile[2]) closestPoint = [tile[1] + 1, tile[2]] as TileCoord
+			else if (lngLat[1] > tile[2] + 1) closestPoint = [tile[1] + 1, tile[2] + 1] as TileCoord
+			else closestPoint = [tile[1] + 1, lngLat[1]] as TileCoord
+		} else {
+			if (lngLat[1] < tile[2]) closestPoint = [lngLat[0], tile[2]] as TileCoord
+			else if (lngLat[1] > tile[2] + 1) closestPoint = [lngLat[0], tile[2] + 1] as TileCoord
+			else closestPoint = [lngLat[0], lngLat[1]] as TileCoord
+		}
+
+		const isClosestPointInTile =
+			closestPoint[0] >= topLeft[0] &&
+			closestPoint[0] <= topRight[0] &&
+			closestPoint[1] >= bottomLeft[1] &&
+			closestPoint[1] <= topLeft[1]
+		couldTileBeInView ||= isClosestPointInTile
+		isTileInView ||= isClosestPointInTile
+
+		if (!couldTileBeInView) return []
 	}
 
-	if (tile[0] === 1) console.log(calcTileSize(bottomRight), isBeyondHorizon(bottomRight))
+	if (maxTileSize < 1) return [tile]
 
-	const isInViewFrustum = (projectedPos: Vec3) =>
-		projectedPos.x >= -1 && projectedPos.x <= 1 && projectedPos.y >= -1 && projectedPos.y <= 1
-	const areAllCornersInViewFrustum =
-		isInViewFrustum(topLeftProjected) &&
-		isInViewFrustum(topRightProjected) &&
-		isInViewFrustum(bottomLeftProjected) &&
-		isInViewFrustum(bottomRightProjected)
-
-	// const childTopLeftProcessed = processTile(
-	// 	[tile[0] + 1, tile[1] * 2, tile[2] * 2] as TileIdArr,
-	// 	viewMatrix,
-	// 	cameraPos,
-	// 	recursionLimit,
-	// )
-	// const childTopRightProcessed = processTile(
-	// 	[tile[0] + 1, tile[1] * 2 + 1, tile[2] * 2] as TileIdArr,
-	// 	viewMatrix,
-	// 	cameraPos,
-	// 	recursionLimit,
-	// )
-	// const childBottomLeftProcessed = processTile(
-	// 	[tile[0] + 1, tile[1] * 2, tile[2] * 2 + 1] as TileIdArr,
-	// 	viewMatrix,
-	// 	cameraPos,
-	// 	recursionLimit,
-	// )
-	// const childBottomRightProcessed = processTile(
-	// 	[tile[0] + 1, tile[1] * 2 + 1, tile[2] * 2 + 1] as TileIdArr,
-	// 	viewMatrix,
-	// 	cameraPos,
-	// 	recursionLimit,
-	// )
-
-	// let inView =
-	// 	(areAllCornersInViewFrustum && !areAnyCornersBeyondHorizon) ||
-	// 	childTopLeftProcessed !== null ||
-	// 	childTopRightProcessed !== null ||
-	// 	childBottomLeftProcessed !== null ||
-	// 	childBottomRightProcessed !== null
-
-	// if (inView) {
-	// 	visibleTiles.push({
-	// 		tile,
-	// 		tileSize: maxTileSize,
-	// 	})
-	// }
-
-	// return maxTileSize
+	const childTopLeft = processTile(
+		[tile[0] + 1, tile[1] * 2, tile[2] * 2] as TileIdArr,
+		viewMatrix,
+		lngLat,
+		cameraPos,
+		screenWidth,
+		referenceTileSize,
+		recursionLimit,
+		isTileInView,
+	)
+	const childTopRight = processTile(
+		[tile[0] + 1, tile[1] * 2 + 1, tile[2] * 2] as TileIdArr,
+		viewMatrix,
+		lngLat,
+		cameraPos,
+		screenWidth,
+		referenceTileSize,
+		recursionLimit,
+		isTileInView,
+	)
+	const childBottomLeft = processTile(
+		[tile[0] + 1, tile[1] * 2, tile[2] * 2 + 1] as TileIdArr,
+		viewMatrix,
+		lngLat,
+		cameraPos,
+		screenWidth,
+		referenceTileSize,
+		recursionLimit,
+		isTileInView,
+	)
+	const childBottomRight = processTile(
+		[tile[0] + 1, tile[1] * 2 + 1, tile[2] * 2 + 1] as TileIdArr,
+		viewMatrix,
+		lngLat,
+		cameraPos,
+		screenWidth,
+		referenceTileSize,
+		recursionLimit,
+		isTileInView,
+	)
+	return [tile, ...childTopLeft, ...childTopRight, ...childBottomLeft, ...childBottomRight]
 }

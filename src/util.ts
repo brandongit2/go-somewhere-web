@@ -76,6 +76,8 @@ export const roughEq = (a: number, b: number, epsilon = 1e-6) => Math.abs(a - b)
 
 export const roundToNearest = (value: number, nearest: number) => Math.round(value / nearest) * nearest
 
+export const tileIdArrToStr = (tileId: TileIdArr): TileIdStr => tileId.join(`/`) as TileIdStr
+
 export const tileIdStrToArr = (tileId: TileIdStr): TileIdArr =>
 	tileId.split(`/`).map((coord) => parseInt(coord)) as TileIdArr
 
