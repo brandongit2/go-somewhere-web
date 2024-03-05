@@ -195,6 +195,8 @@ const processTile = (
 	referenceTileSize: number,
 	recursionLimit = tile[0] + 7,
 	knownToBeInView = false,
+	// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+	// @ts-ignore
 ): TileIdArr[] => {
 	if (tile[0] >= recursionLimit) return []
 
