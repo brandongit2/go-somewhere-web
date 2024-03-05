@@ -5,8 +5,7 @@ export type Coord2d = [number, number]
 
 export type Coord3d = [number, number, number]
 
-/** ECEF stands for Earth-centered, Earth-fixed. */
-export type EcefCoord = Opaque<[number, number, number], "EcefCoord">
+export type LngLat = Opaque<Coord2d, "LngLat">
 
 export type MapLayerFeature = {
 	extent: number
@@ -30,12 +29,12 @@ export type MapTileLayer = {
 	features: MapLayerFeature[]
 }
 
-export type MercatorCoord = Opaque<[number, number], "MercatorCoord">
+export type MercatorCoord = Opaque<Coord2d, "MercatorCoord">
 
 export type TileIdArr = Opaque<[number, number, number], "TileIdArr"> // [zoom, x, y]
 
 export type TileIdStr = `${number}/${number}/${number}`
 
-export type TileCoord = Opaque<[number, number], "TileCoord">
+export type TileCoord = Opaque<Coord2d, "TileCoord">
 
-export type WorldCoord = Opaque<[number, number, number], "WorldCoord">
+export type WorldCoord = Opaque<Coord3d, "WorldCoord">

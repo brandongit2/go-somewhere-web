@@ -62,7 +62,7 @@ export class Vec3 {
 
 	as = <T extends [number, number, number]>() => [this.x, this.y, this.z] as T
 
-	toString = () => `(${this.x}, ${this.y}, ${this.z})`
+	toString = () => `(${this.x.toFixed(5)}, ${this.y.toFixed(5)}, ${this.z.toFixed(5)})`
 
 	toTuple = () => [this.x, this.y, this.z] as [number, number, number]
 

@@ -1,26 +1,22 @@
 import {Vec3} from "@/math/Vec3"
-import {type Coord3d, type MercatorCoord, type WorldCoord} from "@/types"
-import {mercatorToEcef, roughEq} from "@/util"
+import {type Coord3d, type WorldCoord} from "@/types"
+import {roughEq} from "@/util"
 
-export const linestringToMesh = (linestring: MercatorCoord[]) => {
-	const linestring3d = linestring
-		.map((vertex) => new Vec3(mercatorToEcef(vertex)))
-		.map((vertex) => new Vec3([vertex.y, vertex.z, vertex.x]))
-
+export const linestringToMesh = (linestring: WorldCoord[]) => {
 	const vertices: WorldCoord[] = []
 	const normals: Coord3d[] = []
 	const miterLengths: number[] = []
 	let indices: number[] = []
-	if (linestring3d.length < 2) return {vertices, normals, miterLengths, indices}
+	if (linestring.length < 2) return {vertices, normals, miterLengths, indices}
 
 	let oldNextNormal: Vec3 | undefined
-	for (let i = 0; i < linestring3d.length; i++) {
+	for (let i = 0; i < linestring.length; i++) {
 		// The current vertex has a vector pointing to the previous vertex and/or a vector pointing to the next vertex. For
 		// these vectors, we find a vector perpendicular to them, tangent to the globe. The mitre is then the bisector of
 		// these two vectors, scaled by the mitre length.
 
-		const currentVertex = linestring3d[i]!
-		const nextVertex = linestring3d[i + 1]
+		const currentVertex = new Vec3(linestring[i]!)
+		const nextVertex = linestring[i + 1] && new Vec3(linestring[i + 1]!)
 		const sphereNormal = currentVertex
 
 		let toNext = nextVertex && Vec3.sub(nextVertex, currentVertex)

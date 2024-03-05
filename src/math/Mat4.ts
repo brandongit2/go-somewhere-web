@@ -54,6 +54,23 @@ export class Mat4 {
 		else this.set(..._11OrArr)
 	}
 
+	private cache = {
+		inverse: undefined as Mat4 | undefined,
+	}
+
+	private clearCache = () => {
+		for (const key in this.cache) this.cache[key as keyof typeof this.cache] = undefined
+	}
+
+	get elements() {
+		return this._elements
+	}
+
+	get inverse() {
+		if (this.cache.inverse === undefined) this.cache.inverse = Mat4.invert(this)
+		return this.cache.inverse
+	}
+
 	*[Symbol.iterator]() {
 		for (const e of this._elements) yield e
 	}
@@ -78,6 +95,51 @@ export class Mat4 {
 	timesScalar = (s: number) => Mat4.mulScalar(this, s)
 
 	transposed = () => Mat4.transpose(this)
+
+	static invert = (mat: Mat4) => {
+		const m = mat._elements
+
+		const a0 = m[0] * m[5] - m[1] * m[4]
+		const a1 = m[0] * m[6] - m[2] * m[4]
+		const a2 = m[0] * m[7] - m[3] * m[4]
+		const a3 = m[1] * m[6] - m[2] * m[5]
+		const a4 = m[1] * m[7] - m[3] * m[5]
+		const a5 = m[2] * m[7] - m[3] * m[6]
+		const b0 = m[8] * m[13] - m[9] * m[12]
+		const b1 = m[8] * m[14] - m[10] * m[12]
+		const b2 = m[8] * m[15] - m[11] * m[12]
+		const b3 = m[9] * m[14] - m[10] * m[13]
+		const b4 = m[9] * m[15] - m[11] * m[13]
+		const b5 = m[10] * m[15] - m[11] * m[14]
+
+		const det = a0 * b5 - a1 * b4 + a2 * b3 + a3 * b2 - a4 * b1 + a5 * b0
+		if (det === 0) throw new Error(`Matrix is not invertible.`)
+
+		const invDet = 1 / det
+
+		// prettier-ignore
+		return new Mat4([
+			(m[5] * b5 - m[6] * b4 + m[7] * b3) * invDet,
+			(-m[1] * b5 + m[2] * b4 - m[3] * b3) * invDet,
+			(m[13] * a5 - m[14] * a4 + m[15] * a3) * invDet,
+			(-m[9] * a5 + m[10] * a4 - m[11] * a3) * invDet,
+
+			(-m[4] * b5 + m[6] * b2 - m[7] * b1) * invDet,
+			(m[0] * b5 - m[2] * b2 + m[3] * b1) * invDet,
+			(-m[12] * a5 + m[14] * a2 - m[15] * a1) * invDet,
+			(m[8] * a5 - m[10] * a2 + m[11] * a1) * invDet,
+
+			(m[4] * b4 - m[5] * b2 + m[7] * b0) * invDet,
+			(-m[0] * b4 + m[1] * b2 - m[3] * b0) * invDet,
+			(m[12] * a4 - m[13] * a2 + m[15] * a0) * invDet,
+			(-m[8] * a4 + m[9] * a2 - m[11] * a0) * invDet,
+
+			(-m[4] * b3 + m[5] * b1 - m[6] * b0) * invDet,
+			(m[0] * b3 - m[1] * b1 + m[2] * b0) * invDet,
+			(-m[12] * a3 + m[13] * a1 - m[14] * a0) * invDet,
+			(m[8] * a3 - m[9] * a1 + m[10] * a0) * invDet,
+		])
+	}
 
 	static lookAt = (eye: Vec3, target: Vec3, up: Vec3) => {
 		const z = Vec3.sub(eye, target).normalized()

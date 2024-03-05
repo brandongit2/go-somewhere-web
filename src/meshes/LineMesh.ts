@@ -4,10 +4,10 @@ import {FOUR_BYTES_PER_FLOAT, FOUR_BYTES_PER_INT32, THREE_NUMBERS_PER_3D_COORD} 
 import {linestringToMesh} from "@/linestring-to-mesh"
 import {type MapContext} from "@/map/MapContext"
 import {type Material} from "@/materials/Material"
-import {type MercatorCoord, type WorldCoord} from "@/types"
+import {type WorldCoord} from "@/types"
 
 type LineMeshArgs = {
-	vertices: MercatorCoord[][]
+	vertices: WorldCoord[][]
 	thickness: number
 }
 
@@ -32,6 +32,7 @@ export class LineMesh implements Mesh {
 		this.normalBuffer = null!
 		this.miterLengthBuffer = null!
 		this.indexBuffer = null!
+		this.thickness = null!
 		this.set(args) // Above lines are to appease TypeScript; this line is the real initialization
 
 		const bindGroupLayout = device.createBindGroupLayout({
@@ -113,8 +114,6 @@ export class LineMesh implements Mesh {
 				format: `depth24plus`,
 			},
 		})
-
-		this.thickness = args.thickness
 	}
 
 	draw = (pass: GPURenderPassEncoder) => {
@@ -140,6 +139,8 @@ export class LineMesh implements Mesh {
 		;(this.indexBuffer as typeof this.indexBuffer | undefined)?.destroy()
 
 		const {device} = this.mapContext
+
+		this.thickness = args.thickness
 
 		const mesh = args.vertices
 			.map((coords) => linestringToMesh(coords))

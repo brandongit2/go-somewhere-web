@@ -96,10 +96,10 @@ const MapImpl = () => {
 			}}
 			onPan={(event, info) => {
 				if (!mapRoot.current || !mapContext.current) return
-				const {lng, lat, degreesPerPx} = mapContext.current
+				const {lng, lat} = mapContext.current
 
-				mapContext.current.lng = ((lng - info.delta.x * degreesPerPx + 180) % 360) - 180
-				mapContext.current.lat = clamp(lat + info.delta.y * degreesPerPx, -85, 85)
+				mapContext.current.lng = ((lng - info.delta.x * 0.1 + 180) % 360) - 180
+				mapContext.current.lat = clamp(lat + info.delta.y * 0.1, -85, 85)
 				mapRoot.current.updateCamera()
 			}}
 			onWheel={(event) => {

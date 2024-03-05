@@ -4,10 +4,10 @@ import {FOUR_BYTES_PER_FLOAT, FOUR_BYTES_PER_INT32, SIXTEEN_NUMBERS_PER_MAT4, TH
 import {type MapContext} from "@/map/MapContext"
 import {type Material} from "@/materials/Material"
 import {Mat4} from "@/math/Mat4"
-import {type EcefCoord, type Coord3d} from "@/types"
+import {type Coord3d, type WorldCoord} from "@/types"
 
 type FlatMeshArgs = {
-	vertices: EcefCoord[]
+	vertices: WorldCoord[]
 	indices: number[]
 	pos?: Coord3d
 }
@@ -89,6 +89,9 @@ export class FlatMesh implements Mesh {
 				module: material.fragShaderModule,
 				entryPoint: `main`,
 				targets: [{format: presentationFormat}],
+			},
+			primitive: {
+				cullMode: `back`,
 			},
 			depthStencil: {
 				depthWriteEnabled: true,

@@ -3,11 +3,11 @@ import earcut from "earcut"
 import {type MapTile} from "./MapTile"
 import {type MapContext} from "@/map/MapContext"
 import {type Material} from "@/materials/Material"
-import {GlobeProjectedMesh} from "@/meshes/GlobeProjectedMesh"
+import {FlatMesh} from "@/meshes/FlatMesh"
 import {LineMesh} from "@/meshes/LineMesh"
 import {type Mesh} from "@/meshes/Mesh"
-import {type MapTileLayer, type MercatorCoord} from "@/types"
-import {groupByTwos} from "@/util"
+import {type MapTileLayer, type MercatorCoord, type WorldCoord} from "@/types"
+import {groupByTwos, mercatorToWorld} from "@/util"
 
 export type MapLayerProps = {
 	layer: MapTileLayer
@@ -62,27 +62,28 @@ export class MapLayer {
 			}
 		}
 
-		if (lines.length > 0) this.meshes.push(new LineMesh(mapContext, {vertices: lines, thickness: 0.001}, material))
+		if (lines.length > 0)
+			this.meshes.push(
+				new LineMesh(
+					mapContext,
+					{
+						vertices: lines.map((line) => line.map((vertex) => mercatorToWorld(vertex))),
+						thickness: 0.002,
+					},
+					material,
+				),
+			)
 		if (polygons.vertices.length > 0)
 			this.meshes.push(
-				new GlobeProjectedMesh(mapContext, {vertices: polygons.vertices, indices: polygons.indices}, material),
+				new FlatMesh(
+					mapContext,
+					{
+						vertices: polygons.vertices.map((v) => mercatorToWorld(v)),
+						indices: polygons.indices,
+					},
+					material,
+				),
 			)
-
-		// this.meshes.push(
-		// 	new FlatMesh(
-		// 		mapContext,
-		// 		{
-		// 			vertices: [
-		// 				[-0.5, -0.5, 0],
-		// 				[0, 0.5, 0],
-		// 				[0.5, -0.5, 0],
-		// 			] as EcefPoint[],
-		// 			indices: [0, 1, 2],
-		// 			pos: [0, 0, -4] as Coord3d,
-		// 		},
-		// 		material,
-		// 	),
-		// )
 	}
 
 	draw = (encoder: GPURenderPassEncoder) => {
