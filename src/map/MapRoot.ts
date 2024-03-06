@@ -163,7 +163,7 @@ const processTile = (
 	cameraPos: Vec3,
 	screenWidth: number,
 	referenceTileSize: number,
-	recursionLimit = tile[0] + 12,
+	recursionLimit = tile[0] + 1,
 	knownToBeInView = false,
 ): TileIdArr[] => {
 	if (tile[0] > recursionLimit) return []
@@ -258,6 +258,7 @@ const processTile = (
 			else if (lngLat[1] > tile[2] + 1) closestPoint = [lngLat[0], tile[2] + 1] as TileCoord
 			else closestPoint = [lngLat[0], lngLat[1]] as TileCoord
 		}
+		console.log(closestPoint)
 
 		const isClosestPointInTile =
 			closestPoint[0] >= topLeft[0] &&
