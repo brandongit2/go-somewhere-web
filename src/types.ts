@@ -5,7 +5,10 @@ export type Coord2d = [number, number]
 
 export type Coord3d = [number, number, number]
 
-export type LngLat = Opaque<Coord2d, "LngLat">
+export type LngLat = {
+	lng: number
+	lat: number
+}
 
 export type MapLayerFeature = {
 	extent: number
@@ -29,12 +32,20 @@ export type MapTileLayer = {
 	features: MapLayerFeature[]
 }
 
+// [0, 1] range
 export type MercatorCoord = Opaque<Coord2d, "MercatorCoord">
 
-export type TileIdArr = Opaque<[number, number, number], "TileIdArr"> // [zoom, x, y]
+export type TileId = {
+	zoom: number
+	x: number
+	y: number
+}
 
 export type TileIdStr = `${number}/${number}/${number}`
 
-export type TileCoord = Opaque<Coord2d, "TileCoord">
+// [0, 1] range
+export type TileLocalCoord = Opaque<Coord2d, "TileLocalCoord">
+
+export type WindowCoord = Opaque<Coord2d, "WindowCoord">
 
 export type WorldCoord = Opaque<Coord3d, "WorldCoord">

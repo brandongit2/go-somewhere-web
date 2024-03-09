@@ -10,8 +10,8 @@ import QueryStringAddon from "wretch/addons/queryString"
 import {MapTile} from "./MapTile"
 import {MAPBOX_ACCESS_TOKEN} from "@/env"
 import {type MapContext} from "@/map/MapContext"
-import {type MapLayerFeature, type MapTileLayer, type TileIdArr, type TileIdStr, type TileCoord} from "@/types"
-import {tileCoordToMercator, tileIdStrToArr} from "@/util"
+import {type MapLayerFeature, type MapTileLayer, type TileIdStr, type TileLocalCoord} from "@/types"
+import {breakDownTileId, tileLocalCoordToMercator} from "@/util"
 
 const fetchLimit = pLimit(20)
 
@@ -30,7 +30,7 @@ export class TileManager {
 		if (this.tileCache.has(tileId)) return this.tileCache.get(tileId)!
 		if (this.tilesBeingFetched.has(tileId)) return this.tilesBeingFetched.get(tileId)![1]
 
-		const [zoom, x, y] = tileIdStrToArr(tileId)
+		const {zoom, x, y} = breakDownTileId(tileId)
 		const controller = new AbortController()
 
 		const fetchPromise = fetchLimit(
@@ -59,7 +59,7 @@ export class TileManager {
 								.loadGeometry()
 								.map((ring) =>
 									ring.map((coord) =>
-										tileCoordToMercator([coord.x, coord.y] as TileCoord, [zoom, x, y] as TileIdArr, feature.extent),
+										tileLocalCoordToMercator([coord.x, coord.y] as TileLocalCoord, {zoom, x, y}, feature.extent),
 									),
 								),
 						})

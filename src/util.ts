@@ -1,4 +1,16 @@
-import {type MercatorCoord, type TileIdArr, type TileIdStr, type TileCoord, type WorldCoord, type LngLat} from "@/types"
+import {
+	type MercatorCoord,
+	type TileId,
+	type TileLocalCoord,
+	type WorldCoord,
+	type LngLat,
+	type TileIdStr,
+} from "@/types"
+
+export const breakDownTileId = (tileId: TileIdStr) => {
+	const [zoom, x, y] = tileId.split(`/`).map(Number) as [number, number, number]
+	return {zoom, x, y}
+}
 
 export const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max)
 
@@ -24,16 +36,19 @@ export const groupByThrees = (vertexArray: number[]) => {
 	return coordArray
 }
 
-/** Continuous, not discrrete!! */
-export const lngLatToTile = (lngLat: LngLat, zoom: number): TileIdArr => {
-	const x = lngToTileX(lngLat[0], zoom)
-	const y = latToTileY(lngLat[1], zoom)
-	return [zoom, x, y] as TileIdArr
+export const lngLatToMercator = (lngLat: LngLat): MercatorCoord => {
+	const lambda = degToRad(lngLat.lng)
+	const phi = degToRad(lngLat.lat)
+	const x = (lambda + Math.PI) / (2 * Math.PI)
+	const y = 0.5 - Math.log(Math.tan(Math.PI / 4 + phi / 2)) / (2 * Math.PI)
+	return [x, y] as MercatorCoord
 }
 
+export const lngLatToTile = (lngLat: LngLat, zoom: number): TileId => mercatorToTile(lngLatToMercator(lngLat), zoom)
+
 export const lngLatToWorld = (lngLat: LngLat, radius = 1): WorldCoord => {
-	const lng = degToRad(lngLat[0])
-	const lat = degToRad(lngLat[1])
+	const lng = degToRad(lngLat.lng)
+	const lat = degToRad(lngLat.lat)
 
 	const cosLat = Math.cos(lat)
 	const sinLat = Math.sin(lat)
@@ -43,32 +58,22 @@ export const lngLatToWorld = (lngLat: LngLat, radius = 1): WorldCoord => {
 	return [cosLat * sinLng * radius, sinLat * radius, cosLat * cosLng * radius] as WorldCoord
 }
 
-export const latToMercatorY = (lat: number) =>
-	(180 - (180 / Math.PI) * Math.log(Math.tan(Math.PI / 4 + (lat * Math.PI) / 360))) / 360
-
-/** Continuous, not discrete!! */
-export const latToTileY = (lat: number, zoom: number) =>
-	((1 - Math.log(Math.tan((lat * Math.PI) / 180) + 1 / Math.cos((lat * Math.PI) / 180)) / Math.PI) / 2) *
-	Math.pow(2, zoom)
-
-export const lngToMercatorX = (lng: number) => (180 + lng) / 360
-
-/** Continuous, not discrete!! */
-export const lngToTileX = (lng: number, zoom: number) => ((lng + 180) / 360) * Math.pow(2, zoom)
-
-export const mercatorToWorld = (point: MercatorCoord): WorldCoord => {
-	const lat = mercatorYToLat(point[1])
-	const lng = mercatorXToLng(point[0])
-	const pos = lngLatToWorld([lng, lat] as LngLat)
-	return pos
+export const mercatorToLngLat = (point: MercatorCoord): LngLat => {
+	const [x, y] = point
+	const lambda = 2 * Math.PI * x - Math.PI
+	const phi = 2 * Math.atan(Math.exp(Math.PI - 2 * Math.PI * y)) - Math.PI / 2
+	return {lng: radToDeg(lambda), lat: radToDeg(phi)}
 }
 
-export const mercatorXToLng = (x: number) => x * 360 - 180
-
-export const mercatorYToLat = (y: number) => {
-	const y2 = 180 - y * 360
-	return (360 / Math.PI) * Math.atan(Math.exp((y2 * Math.PI) / 180)) - 90
+export const mercatorToTile = (point: MercatorCoord, zoom: number): TileId => {
+	const [x, y] = point
+	const tileCount = 1 << zoom
+	const xTile = Math.floor(x * tileCount)
+	const yTile = Math.floor(y * tileCount)
+	return {zoom, x: xTile, y: yTile}
 }
+
+export const mercatorToWorld = (point: MercatorCoord): WorldCoord => lngLatToWorld(mercatorToLngLat(point))
 
 export const radToDeg = (a: number) => a * (180 / Math.PI)
 
@@ -76,31 +81,24 @@ export const roughEq = (a: number, b: number, epsilon = 1e-6) => Math.abs(a - b)
 
 export const roundToNearest = (value: number, nearest: number) => Math.round(value / nearest) * nearest
 
-export const tileIdArrToStr = (tileId: TileIdArr): TileIdStr => tileId.join(`/`) as TileIdStr
-
-export const tileIdStrToArr = (tileId: TileIdStr): TileIdArr =>
-	tileId.split(`/`).map((coord) => parseInt(coord)) as TileIdArr
-
-export const tileToLngLat = (tileId: TileIdArr) => {
-	const [zoom, x, y] = tileId
-	const lng = tileXToLng(x, zoom)
-	const lat = tileYToLat(y, zoom)
-	return [lng, lat] as LngLat
+export const tileToLngLat = (tileId: TileId) => {
+	const {zoom, x, y} = tileId
+	const lng = (x / 2 ** zoom) * 360 - 180
+	const n = Math.PI - (2 * Math.PI * y) / 2 ** zoom
+	const lat = (180 / Math.PI) * Math.atan(0.5 * (Math.exp(n) - Math.exp(-n)))
+	return {lng, lat}
 }
 
-export const tileXToLng = (x: number, z: number) => (x / Math.pow(2, z)) * 360 - 180
-
-export const tileYToLat = (y: number, z: number) => {
-	const n = Math.PI - (2 * Math.PI * y) / Math.pow(2, z)
-	return (180 / Math.PI) * Math.atan(0.5 * (Math.exp(n) - Math.exp(-n)))
-}
-
-export const tileCoordToMercator = (coord: TileCoord, tileId: TileIdArr, featureExtent: number): MercatorCoord => {
-	const [tileX, tileY] = coord
-	const [zoom, x, y] = tileId
-	const tileCount = 1 << zoom
-	const mercatorX = (tileX / featureExtent + x) / tileCount
-	const mercatorY = (tileY / featureExtent + y) / tileCount
+export const tileLocalCoordToMercator = (
+	coord: TileLocalCoord,
+	tileId: TileId,
+	featureExtent: number,
+): MercatorCoord => {
+	const [tileLocalX, tileLocalY] = coord
+	const {zoom, x, y} = tileId
+	const tileCount = 2 ** zoom
+	const mercatorX = (tileLocalX / featureExtent + x) / tileCount
+	const mercatorY = (tileLocalY / featureExtent + y) / tileCount
 	return [mercatorX, mercatorY] as MercatorCoord
 }
 

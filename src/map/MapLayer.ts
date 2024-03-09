@@ -6,7 +6,7 @@ import {type Material} from "@/materials/Material"
 import {FlatMesh} from "@/meshes/FlatMesh"
 import {LineMesh} from "@/meshes/LineMesh"
 import {type Mesh} from "@/meshes/Mesh"
-import {type MapTileLayer, type MercatorCoord, type WorldCoord} from "@/types"
+import {type MapTileLayer, type MercatorCoord} from "@/types"
 import {groupByTwos, mercatorToWorld} from "@/util"
 
 export type MapLayerProps = {

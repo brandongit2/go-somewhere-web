@@ -1,14 +1,16 @@
 import {FOUR_BYTES_PER_FLOAT, PX_PER_TILE, SIXTEEN_NUMBERS_PER_MAT4} from "@/const"
 import {TileManager} from "@/map/TileManager"
+import {type LngLat} from "@/types"
 
 export class MapContext {
-	height: number
-	width: number
-	lng = 0
-	lat = 0
+	windowHeight: number
+	windowWidth: number
+	cameraPos: LngLat = {lng: 0, lat: 0}
 	zoom = 0
+
+	// Degrees of latitude per logical pixel
 	get degreesPerPx() {
-		return 360 / PX_PER_TILE / 2 ** this.zoom
+		return 360 / (PX_PER_TILE * 2 ** this.zoom)
 	}
 
 	canvasContext: GPUCanvasContext
@@ -30,8 +32,8 @@ export class MapContext {
 		canvasElement: HTMLCanvasElement
 		device: GPUDevice
 	}) {
-		this.height = canvasElement.getBoundingClientRect().height
-		this.width = canvasElement.getBoundingClientRect().width
+		this.windowHeight = canvasElement.getBoundingClientRect().height
+		this.windowWidth = canvasElement.getBoundingClientRect().width
 		this.canvasContext = canvasContext
 		this.canvasElement = canvasElement
 		this.device = device
@@ -56,7 +58,7 @@ export class MapContext {
 	createDepthTexture = () => {
 		this.depthTexture = this.device.createTexture({
 			label: `depth texture`,
-			size: [this.width * devicePixelRatio, this.height * devicePixelRatio],
+			size: [this.windowWidth * devicePixelRatio, this.windowHeight * devicePixelRatio],
 			format: `depth24plus`,
 			usage: GPUTextureUsage.RENDER_ATTACHMENT,
 		})

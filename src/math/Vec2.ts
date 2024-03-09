@@ -1,10 +1,20 @@
 import {clamp} from "@/util"
 
 export class Vec2 {
-	constructor(
-		private _x: number,
-		private _y: number,
-	) {}
+	private _x: number
+	private _y: number
+
+	constructor(xy: [number, number])
+	constructor(x: number, y: number)
+	constructor(xOrArr: number | [number, number], y?: number) {
+		if (Array.isArray(xOrArr)) {
+			this._x = xOrArr[0]
+			this._y = xOrArr[1]
+		} else {
+			this._x = xOrArr
+			this._y = y!
+		}
+	}
 
 	private cache = {
 		length: undefined as number | undefined,

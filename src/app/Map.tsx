@@ -8,6 +8,7 @@ import {useAsyncError} from "@/hooks/use-async-error"
 import {type MapContext} from "@/map/MapContext"
 import {MapRoot} from "@/map/MapRoot"
 import {Vec2} from "@/math/Vec2"
+import {type WindowCoord} from "@/types"
 import {clamp} from "@/util"
 
 const MapImpl = () => {
@@ -21,13 +22,13 @@ const MapImpl = () => {
 
 		const {canvasElement, device} = mapContext.current
 
-		mapContext.current.width = clamp(
-			canvasElement.getBoundingClientRect().width,
+		mapContext.current.windowWidth = clamp(
+			canvasElement.getBoundingClientRect().width * devicePixelRatio,
 			1,
 			device.limits.maxTextureDimension2D,
 		)
-		mapContext.current.height = clamp(
-			canvasElement.getBoundingClientRect().height,
+		mapContext.current.windowHeight = clamp(
+			canvasElement.getBoundingClientRect().height * devicePixelRatio,
 			1,
 			device.limits.maxTextureDimension2D,
 		)
@@ -55,20 +56,27 @@ const MapImpl = () => {
 	}, [handleResize, throwError])
 
 	// Render
-	const mousePos = useMotionValue<[number, number] | null>(null)
-	const mousePosWorld = useTransform(mousePos, (p) => {
-		if (!mapContext.current || !p) return null
-		const {width, height, lng, lat, degreesPerPx} = mapContext.current
+	const mousePos = useMotionValue<WindowCoord | null>(null)
+	const mousePosWorld = useTransform(mousePos, (mousePos) => {
+		if (!mapContext.current || !mousePos) return null
 
-		const pos = new Vec2(lng, lat)
-		const cursorX = p[0] - width / 2
-		const cursorY = -(p[1] - height / 2)
-		return new Vec2(cursorX, cursorY).times(degreesPerPx).plus(pos)
+		const {windowWidth, windowHeight, cameraPos: cameraPosObj, degreesPerPx} = mapContext.current
+
+		const logicalWindowWidth = windowWidth / devicePixelRatio
+		const logicalWindowHeight = windowHeight / devicePixelRatio
+
+		const cameraPos = new Vec2(cameraPosObj.lng, cameraPosObj.lat)
+		const cursorX = mousePos[0] - logicalWindowWidth / 2
+		const cursorY = -(mousePos[1] - logicalWindowHeight / 2)
+		return new Vec2(cursorX, cursorY).times(degreesPerPx).plus(cameraPos)
 	})
 	const zoomChangeAmount = useRef(0)
 	useAnimationFrame(() => {
 		if (!mapRoot.current || !mapContext.current) return
-		const {height, width, lng, lat, zoom, degreesPerPx} = mapContext.current
+		const {windowHeight, windowWidth, cameraPos, zoom, degreesPerPx} = mapContext.current
+
+		const logicalWindowWidth = windowWidth / devicePixelRatio
+		const logicalWindowHeight = windowHeight / devicePixelRatio
 
 		const mp = mousePos.get()
 		const mpw = mousePosWorld.get()
@@ -76,8 +84,10 @@ const MapImpl = () => {
 			const newZoom = clamp(zoom - zoomChangeAmount.current, 0, 18)
 			const scaleChange = 2 ** (newZoom - zoom)
 
-			mapContext.current.lng = clamp(lng + (mp[0] - 0.5 * width) * (1 - 1 / scaleChange) * degreesPerPx, -180, 180)
-			mapContext.current.lat = clamp(lat - (mp[1] - 0.5 * height) * (1 - 1 / scaleChange) * degreesPerPx, -85, 85)
+			mapContext.current.cameraPos = {
+				lng: clamp(cameraPos.lng + (mp[0] - logicalWindowWidth / 2) * (1 - 1 / scaleChange) * degreesPerPx, -180, 180),
+				lat: clamp(cameraPos.lat - (mp[1] - logicalWindowHeight / 2) * (1 - 1 / scaleChange) * degreesPerPx, -85, 85),
+			}
 			mapContext.current.zoom = newZoom
 
 			mapRoot.current.updateCamera()
@@ -92,14 +102,19 @@ const MapImpl = () => {
 			ref={canvasRef}
 			className="h-full w-full touch-none"
 			onPointerMove={(event) => {
-				mousePos.set([event.clientX, event.clientY])
+				mousePos.set([event.clientX, event.clientY] as WindowCoord)
 			}}
 			onPan={(event, info) => {
 				if (!mapRoot.current || !mapContext.current) return
-				const {lng, lat} = mapContext.current
+				const {cameraPos, degreesPerPx} = mapContext.current
 
-				mapContext.current.lng = ((lng - info.delta.x * 0.1 + 180) % 360) - 180
-				mapContext.current.lat = clamp(lat + info.delta.y * 0.1, -85, 85)
+				let newLng = cameraPos.lng - info.delta.x * degreesPerPx
+				if (newLng < -180) newLng += 360
+				else if (newLng > 180) newLng -= 360
+				mapContext.current.cameraPos = {
+					lng: newLng,
+					lat: clamp(cameraPos.lat + info.delta.y * degreesPerPx, -85, 85),
+				}
 				mapRoot.current.updateCamera()
 			}}
 			onWheel={(event) => {

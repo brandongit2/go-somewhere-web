@@ -62,6 +62,13 @@ export class Vec3 {
 
 	as = <T extends [number, number, number]>() => [this.x, this.y, this.z] as T
 
+	set = (x: number, y: number, z: number) => {
+		this.x = x
+		this.y = y
+		this.z = z
+		return this
+	}
+
 	toString = () => `(${this.x.toFixed(5)}, ${this.y.toFixed(5)}, ${this.z.toFixed(5)})`
 
 	toTuple = () => [this.x, this.y, this.z] as [number, number, number]
@@ -70,6 +77,10 @@ export class Vec3 {
 		if (this.cache.length === undefined) this.cache.length = Vec3.len(this)
 		return this.cache.length
 	}
+
+	distanceTo = (v: Vec3) => Vec3.len(this.minus(v))
+
+	dot = (v: Vec3) => Vec3.dot(this, v)
 
 	minus = (v: Vec3) => Vec3.sub(this, v)
 
