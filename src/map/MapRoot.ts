@@ -8,8 +8,8 @@ import {Vec3} from "@/math/Vec3"
 import {Vec4} from "@/math/Vec4"
 import {LineMesh} from "@/meshes/LineMesh"
 import {type Mesh} from "@/meshes/Mesh"
-import {type LngLat, type TileId, type WorldCoord} from "@/types"
-import {breakDownTileId, degToRad, lngLatToWorld, tileToLngLat} from "@/util"
+import {type LngLat, type TileId, type TileLocalCoord, type WorldCoord} from "@/types"
+import {breakDownTileId, degToRad, lngLatToWorld, tileIdToStr, tileLocalCoordToLngLat, tileToLngLat} from "@/util"
 
 const CONSTRUCTOR_KEY = Symbol(`MapRoot constructor key`)
 
@@ -52,15 +52,7 @@ export class MapRoot {
 				vertices: [],
 				thickness: 0.01,
 			},
-			new FlatMaterial(map.mapContext, [0, 1, 0]),
-		)
-		map.extraObjects[1] = new LineMesh(
-			map.mapContext,
-			{
-				vertices: [],
-				thickness: 0.01,
-			},
-			new FlatMaterial(map.mapContext, [1, 0, 0]),
+			new FlatMaterial(map.mapContext, [0, 0.3, 0]),
 		)
 
 		return [map, map.mapContext]
@@ -116,21 +108,20 @@ export class MapRoot {
 	updateCamera = () => {
 		const {tileManager, device, viewMatrixBuffer, cameraPos, zoom, windowWidth, windowHeight} = this.mapContext
 
-		tileManager.setTilesInView([`0/0/0`])
-
 		this.mapContext.canvasElement.width = windowWidth * devicePixelRatio
 		this.mapContext.canvasElement.height = windowHeight * devicePixelRatio
 		this.mapContext.createDepthTexture()
 
 		const fovX = 75
-		let viewMatrix = Mat4.makePerspective(fovX, windowWidth / windowHeight, 0.001)
+		let viewMatrix = Mat4.makePerspective(fovX, windowWidth / windowHeight, 0.0001)
 		const distance = cameraDistanceFromZoom(zoom)
 		const cameraPosWorld = new Vec3(lngLatToWorld(cameraPos, distance + 1))
 		const rotationMatrix = Mat4.lookAt(cameraPosWorld, new Vec3(0, 0, 0), new Vec3(0, 1, 0))
 		viewMatrix = Mat4.mul(viewMatrix, rotationMatrix)
 
 		const visibleTiles = processTile({zoom: 0, x: 0, y: 0}, viewMatrix, cameraPos, zoom, windowWidth, windowHeight)
-		;(this.extraObjects[1] as LineMesh).set({
+		tileManager.setTilesInView(visibleTiles.map((tileId) => tileIdToStr(tileId)))
+		;(this.extraObjects[0] as LineMesh).set({
 			vertices: visibleTiles.map(
 				({zoom, x, y}) =>
 					[
@@ -162,77 +153,83 @@ const processTile = (
 ): TileId[] => {
 	if (tile.zoom > maxZoom) return []
 
-	const earthRadius = 1
-	const cameraPosWorld = new Vec3(lngLatToWorld(cameraPos, earthRadius))
-	const toCamera = cameraPosWorld.normalized()
-	const cameraDistance = cameraPosWorld.length
-	const cosThetaForHorizon = earthRadius / (earthRadius + cameraDistance)
+	// Determine the points to sample
+	let pointsToSample: LngLat[] = []
+	if (tile.zoom > 4) {
+		// Less distortion; just sample the corners
 
-	const tileCenter = tileToLngLat({zoom: tile.zoom, x: tile.x + 0.5, y: tile.y + 0.5})
-	const topLeft = tileToLngLat({zoom: tile.zoom, x: tile.x, y: tile.y})
-	const topRight = tileToLngLat({zoom: tile.zoom, x: tile.x + 1, y: tile.y})
-	const bottomLeft = tileToLngLat({zoom: tile.zoom, x: tile.x, y: tile.y + 1})
-	const bottomRight = tileToLngLat({zoom: tile.zoom, x: tile.x + 1, y: tile.y + 1})
+		const pointsToSampleTileLocal = [
+			[0, 0],
+			[0, 1],
+			[1, 0],
+			[1, 1],
+		] as TileLocalCoord[]
+		pointsToSample = pointsToSampleTileLocal.map((coord) =>
+			tileToLngLat({zoom: tile.zoom, x: tile.x + coord[0], y: tile.y + coord[1]}),
+		)
+	} else {
+		// More distortion; sample a lattice of points
 
-	const tileCenterWorld = new Vec3(lngLatToWorld(tileCenter))
-	const topLeftWorld = new Vec3(lngLatToWorld(topLeft))
-	const topRightWorld = new Vec3(lngLatToWorld(topRight))
-	const bottomLeftWorld = new Vec3(lngLatToWorld(bottomLeft))
-	const bottomRightWorld = new Vec3(lngLatToWorld(bottomRight))
-
-	const topLeftProjected = Vec4.perspectiveDivide(Vec4.applyMat4(new Vec4(...topLeftWorld.toTuple(), 1), viewMatrix))
-	const topRightProjected = Vec4.perspectiveDivide(Vec4.applyMat4(new Vec4(...topRightWorld.toTuple(), 1), viewMatrix))
-	const bottomLeftProjected = Vec4.perspectiveDivide(
-		Vec4.applyMat4(new Vec4(...bottomLeftWorld.toTuple(), 1), viewMatrix),
-	)
-	const bottomRightProjected = Vec4.perspectiveDivide(
-		Vec4.applyMat4(new Vec4(...bottomRightWorld.toTuple(), 1), viewMatrix),
-	)
-
-	const isBeyondHorizon = (lngLat: LngLat) => {
-		const toPoint = new Vec3(lngLatToWorld(lngLat, earthRadius)).normalized()
-		const cosThetaForPoint = Vec3.dot(toCamera, toPoint)
-		return cosThetaForPoint < cosThetaForHorizon
+		for (let x = 0; x <= 4; x++) {
+			for (let y = 0; y <= 4; y++) {
+				const tileLocal = [x / 4, y / 4] as TileLocalCoord
+				const lngLat = tileLocalCoordToLngLat(tileLocal, tile)
+				pointsToSample.push(lngLat)
+			}
+		}
 	}
-	const isInViewFrustum = (projectedPos: Vec3) =>
-		projectedPos.x >= -1 && projectedPos.x <= 1 && projectedPos.y >= -1 && projectedPos.y <= 1
+	const tileTopLeft = tileToLngLat(tile)
+	const tileBottomRight = tileToLngLat({zoom: tile.zoom, x: tile.x + 1, y: tile.y + 1})
+	if (
+		cameraPos.lng >= tileTopLeft.lng &&
+		cameraPos.lng <= tileBottomRight.lng &&
+		cameraPos.lat <= tileTopLeft.lat &&
+		cameraPos.lat >= tileBottomRight.lat
+	)
+		pointsToSample.push(cameraPos)
 
-	const viewFrustum = new Frustum(viewMatrix)
-	const tileRadius = tileCenterWorld.distanceTo(topLeftWorld)
-	const tileIntersectsViewFrustum = viewFrustum.intersectsSphere(new Sphere(tileCenterWorld, tileRadius))
+	// Determine which points are visible (neither outside the frustum nor beyond the horizon)
+	// If tile is not visible, discard
+	const cameraPosWorld = new Vec3(lngLatToWorld(cameraPos))
+	const toCamera = cameraPosWorld.normalized()
+	const cameraDistance = cameraDistanceFromZoom(zoom) + 1
+	// The vector from globe centre to horizon and the vector to camera form a right triangle, where the hypotenuse is the
+	// vector from the globe centre to camera.
+	// cos(θ) = adj. / hyp.; adj. = globe radius = 1; hyp. = camera distance
+	const cosThetaForHorizon = 1 / cameraDistance
 
 	const isTileBeyondHorizon =
 		tile.zoom > 1 &&
-		isBeyondHorizon(topLeft) &&
-		isBeyondHorizon(topRight) &&
-		isBeyondHorizon(bottomLeft) &&
-		isBeyondHorizon(bottomRight)
-	const isTileCompletelyInFrustum =
-		isInViewFrustum(topLeftProjected) &&
-		isInViewFrustum(topRightProjected) &&
-		isInViewFrustum(bottomLeftProjected) &&
-		isInViewFrustum(bottomRightProjected)
+		pointsToSample.every((lngLat) => {
+			const toPoint = new Vec3(lngLatToWorld(lngLat)).normalized()
+			const cosThetaForPoint = Vec3.dot(toCamera, toPoint)
+			const isBeyondHorizon = cosThetaForPoint < cosThetaForHorizon
+			return isBeyondHorizon
+		})
+	const isTileCompletelyInFrustum = pointsToSample.every((lngLat) => {
+		const worldCoord = new Vec3(lngLatToWorld(lngLat))
+		const projectedPos = Vec4.perspectiveDivide(Vec4.applyMat4(new Vec4(...worldCoord.toTuple(), 1), viewMatrix))
+		return projectedPos.x >= -1 && projectedPos.x <= 1 && projectedPos.y >= -1 && projectedPos.y <= 1
+	})
+	const viewFrustum = new Frustum(viewMatrix)
+	const tileCenter = tileToLngLat({zoom: tile.zoom, x: tile.x + 0.5, y: tile.y + 0.5})
+	const tileCenterWorld = new Vec3(lngLatToWorld(tileCenter))
+	const topLeftWorld = new Vec3(lngLatToWorld(tileTopLeft))
+	const tileRadius = tileCenterWorld.distanceTo(topLeftWorld)
+	const tileIntersectsViewFrustum = viewFrustum.intersectsSphere(new Sphere(tileCenterWorld, tileRadius))
+
 	const isTileInView = (isTileCompletelyInFrustum || tileIntersectsViewFrustum) && !isTileBeyondHorizon
 	if (!isTileInView) return []
 
-	let pointsToSample: LngLat[] = []
-	if (tile.zoom === 1 || tile.zoom === 2)
-		pointsToSample = Array.from({length: 6}).flatMap((_, i) =>
-			Array.from({length: 6}).map((_, j) => ({
-				lng: (i / 6 + tile.x) / 2 ** tile.zoom,
-				lat: (j / 6 + tile.y) / 2 ** tile.zoom,
-			})),
-		)
-	else pointsToSample = [cameraPos]
-
+	// Determine tile size: if tile renders at greater that 512 px, render its children too
 	const sizesAtPoints = pointsToSample.map((point) => {
 		const a = (2 * degToRad(point.lat) + Math.PI) / 4
 		const latitudeFactor = 2 * Math.sin(a) * Math.cos(a)
-		const referenceTileSize = (PX_PER_TILE / windowWidth) * 2 * Math.PI
+		const referenceTileSize = ((PX_PER_TILE * devicePixelRatio) / windowWidth) * 2 * Math.PI
 		const d0 = cameraDistanceFromZoom(0)
 		const dz = cameraDistanceFromZoom(tile.zoom)
 		const zoomFactor = dz / d0
-		const pointWorldPos = new Vec3(lngLatToWorld(point, earthRadius))
+		const pointWorldPos = new Vec3(lngLatToWorld(point))
 		const west = Vec3.cross(pointWorldPos, new Vec3(0, 1, 0))
 			.normalized()
 			.times((referenceTileSize / 2) * zoomFactor * latitudeFactor)
@@ -261,10 +258,10 @@ const processTile = (
 		{zoom: tile.zoom + 1, x: tile.x * 2 + 1, y: tile.y * 2 + 1},
 	]
 
-	if (maxSize < PX_PER_TILE) return [tile, ...childTiles]
+	if (maxSize < PX_PER_TILE * devicePixelRatio) return [tile]
 
 	const children = childTiles.flatMap((tile) =>
 		processTile(tile, viewMatrix, cameraPos, zoom, windowWidth, windowHeight, maxZoom),
 	)
-	return [tile, ...children]
+	return children
 }

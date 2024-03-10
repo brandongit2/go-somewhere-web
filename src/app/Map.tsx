@@ -118,7 +118,7 @@ const MapImpl = () => {
 				mapRoot.current.updateCamera()
 			}}
 			onWheel={(event) => {
-				zoomChangeAmount.current += event.deltaY * 0.01
+				zoomChangeAmount.current += event.deltaY * 0.005
 			}}
 		/>
 	)
