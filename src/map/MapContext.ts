@@ -58,7 +58,7 @@ export class MapContext {
 	createDepthTexture = () => {
 		this.depthTexture = this.device.createTexture({
 			label: `depth texture`,
-			size: [this.windowWidth * devicePixelRatio, this.windowHeight * devicePixelRatio],
+			size: [this.windowWidth, this.windowHeight],
 			format: `depth24plus`,
 			usage: GPUTextureUsage.RENDER_ATTACHMENT,
 		})

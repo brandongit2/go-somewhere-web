@@ -95,7 +95,6 @@ export class TileManager {
 
 	private setTilesInViewImpl = (tileIds: TileIdStr[]) => {
 		this._tilesInView = new Set(tileIds)
-		console.log(this.tileCache.size)
 
 		// Abort fetching tiles that are no longer in view
 		for (const [tileId] of this.tilesBeingFetched) {

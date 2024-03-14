@@ -1,93 +1,106 @@
-import vertShader from "./line-mesh.vert.wgsl"
-import {type Mesh} from "./Mesh"
+import {type Feature} from "./Feature"
+import shader from "./surface-line.wgsl"
 import {FOUR_BYTES_PER_FLOAT, FOUR_BYTES_PER_INT32, THREE_NUMBERS_PER_3D_COORD} from "@/const"
 import {linestringToMesh} from "@/linestring-to-mesh"
 import {type MapContext} from "@/map/MapContext"
-import {type Material} from "@/materials/Material"
-import {type WorldCoord} from "@/types"
+import {type Coord3d, type MercatorCoord, type WorldCoord} from "@/types"
+import {mercatorToWorld} from "@/util"
 
-type LineMeshArgs = {
-	vertices: WorldCoord[][]
+type SurfaceLineArgs = {
+	lines: MercatorCoord[][]
 	thickness: number
+	color: Coord3d
 }
 
-export class LineMesh implements Mesh {
-	bindGroup: GPUBindGroup
-	renderPipeline: GPURenderPipeline
+export class SurfaceLine implements Feature {
+	thickness: number
 	vertexBuffer: GPUBuffer
+	indexBuffer: GPUBuffer
 	normalBuffer: GPUBuffer
 	miterLengthBuffer: GPUBuffer
-	indexBuffer: GPUBuffer
-	thickness: number
-	thicknessUniformBuffer: GPUBuffer
+	thicknessBuffer: GPUBuffer
+	colorBuffer: GPUBuffer
+	bindGroup: GPUBindGroup
+	renderPipeline: GPURenderPipeline
 
 	constructor(
 		private mapContext: MapContext,
-		args: LineMeshArgs,
-		public material: Material,
+		args: SurfaceLineArgs,
 	) {
-		const {device, presentationFormat} = mapContext
+		const {device, viewMatrixBuffer} = mapContext
 
-		this.vertexBuffer = null!
-		this.normalBuffer = null!
-		this.miterLengthBuffer = null!
-		this.indexBuffer = null!
-		this.thickness = null!
-		this.set(args) // Above lines are to appease TypeScript; this line is the real initialization
-
-		const bindGroupLayout = device.createBindGroupLayout({
-			label: `line mesh bind group layout`,
-			entries: [
-				{
-					binding: 0,
-					visibility: GPUShaderStage.VERTEX,
-					buffer: {type: `uniform`},
-				},
-				{
-					binding: 1,
-					visibility: GPUShaderStage.VERTEX,
-					buffer: {type: `uniform`},
-				},
-			],
-		})
-
-		this.thicknessUniformBuffer = device.createBuffer({
-			label: `line mesh thickness uniform buffer`,
+		this.thicknessBuffer = device.createBuffer({
+			label: `surface line thickness buffer`,
 			size: FOUR_BYTES_PER_FLOAT,
 			usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
 		})
+		this.colorBuffer = device.createBuffer({
+			label: `surface line colour buffer`,
+			size: 3 * FOUR_BYTES_PER_FLOAT,
+			usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+		})
 
-		this.bindGroup = device.createBindGroup({
-			label: `line mesh bind group`,
-			layout: bindGroupLayout,
+		this.thickness = null!
+		this.vertexBuffer = null!
+		this.indexBuffer = null!
+		this.normalBuffer = null!
+		this.miterLengthBuffer = null!
+		this.set(args) // Above lines are to appease TypeScript; this line is the real initialization
+
+		const bindGroupLayout = device.createBindGroupLayout({
+			label: `surface line bind group layout`,
 			entries: [
 				{
 					binding: 0,
-					resource: {buffer: this.mapContext.viewMatrixBuffer},
+					visibility: GPUShaderStage.VERTEX,
+					buffer: {type: `uniform`},
 				},
 				{
 					binding: 1,
-					resource: {buffer: this.thicknessUniformBuffer},
+					visibility: GPUShaderStage.VERTEX,
+					buffer: {type: `uniform`},
+				},
+				{
+					binding: 2,
+					visibility: GPUShaderStage.FRAGMENT,
+					buffer: {type: `uniform`},
 				},
 			],
 		})
 
 		const pipelineLayout = device.createPipelineLayout({
-			label: `line mesh pipeline layout`,
-			bindGroupLayouts: [bindGroupLayout, material.bindGroupLayout],
+			label: `surface polygon pipeline layout`,
+			bindGroupLayouts: [bindGroupLayout],
 		})
 
-		const vertShaderModule = device.createShaderModule({
-			label: `line mesh vertex shader`,
-			code: vertShader,
+		const bindGroup = device.createBindGroup({
+			label: `surface line bind group`,
+			layout: bindGroupLayout,
+			entries: [
+				{
+					binding: 0,
+					resource: {buffer: viewMatrixBuffer},
+				},
+				{
+					binding: 1,
+					resource: {buffer: this.thicknessBuffer},
+				},
+				{
+					binding: 2,
+					resource: {buffer: this.colorBuffer},
+				},
+			],
 		})
 
-		this.renderPipeline = device.createRenderPipeline({
-			label: `line material pipeline`,
+		const renderPipeline = device.createRenderPipeline({
+			label: `surface line render pipeline`,
 			layout: pipelineLayout,
 			vertex: {
-				module: vertShaderModule,
-				entryPoint: `main`,
+				module: device.createShaderModule({
+					label: `surface line vertex shader`,
+					code: shader,
+				}),
+				entryPoint: `vs`,
 				buffers: [
 					{
 						arrayStride: THREE_NUMBERS_PER_3D_COORD * FOUR_BYTES_PER_FLOAT,
@@ -104,9 +117,15 @@ export class LineMesh implements Mesh {
 				],
 			},
 			fragment: {
-				module: material.fragShaderModule,
-				entryPoint: `main`,
-				targets: [{format: presentationFormat}],
+				module: device.createShaderModule({
+					label: `surface line fragment shader`,
+					code: shader,
+				}),
+				entryPoint: `fs`,
+				targets: [{format: mapContext.presentationFormat}],
+			},
+			primitive: {
+				cullMode: `back`,
 			},
 			depthStencil: {
 				depthWriteEnabled: true,
@@ -114,16 +133,18 @@ export class LineMesh implements Mesh {
 				format: `depth24plus`,
 			},
 		})
+
+		this.bindGroup = bindGroup
+		this.renderPipeline = renderPipeline
 	}
 
 	draw = (pass: GPURenderPassEncoder) => {
 		const {device, degreesPerPx} = this.mapContext
 
-		device.queue.writeBuffer(this.thicknessUniformBuffer, 0, new Float32Array([this.thickness * degreesPerPx]))
+		device.queue.writeBuffer(this.thicknessBuffer, 0, new Float32Array([this.thickness * degreesPerPx]))
 
 		pass.setPipeline(this.renderPipeline)
 		pass.setBindGroup(0, this.bindGroup)
-		pass.setBindGroup(1, this.material.bindGroup)
 
 		pass.setVertexBuffer(0, this.vertexBuffer)
 		pass.setVertexBuffer(1, this.normalBuffer)
@@ -132,17 +153,15 @@ export class LineMesh implements Mesh {
 		pass.drawIndexed(this.indexBuffer.size / 4)
 	}
 
-	set = (args: LineMeshArgs) => {
+	set = (args: SurfaceLineArgs) => {
+		this.thickness = args.thickness
 		;(this.vertexBuffer as typeof this.vertexBuffer | undefined)?.destroy()
+		;(this.indexBuffer as typeof this.indexBuffer | undefined)?.destroy()
 		;(this.normalBuffer as typeof this.normalBuffer | undefined)?.destroy()
 		;(this.miterLengthBuffer as typeof this.miterLengthBuffer | undefined)?.destroy()
-		;(this.indexBuffer as typeof this.indexBuffer | undefined)?.destroy()
 
-		const {device} = this.mapContext
-
-		this.thickness = args.thickness
-
-		const mesh = args.vertices
+		const lines3d = args.lines.map((line) => line.map((vertex) => mercatorToWorld(vertex)))
+		const mesh = lines3d
 			.map((coords) => linestringToMesh(coords))
 			.reduce(
 				(acc, cur) => {
@@ -154,17 +173,30 @@ export class LineMesh implements Mesh {
 				},
 				{
 					vertices: [] as WorldCoord[],
-					normals: [] as Array<[number, number, number]>,
+					normals: [] as Coord3d[],
 					miterLengths: [] as number[],
 					indices: [] as number[],
 				},
 			)
 
+		const {device} = this.mapContext
+
+		device.queue.writeBuffer(this.thicknessBuffer, 0, new Float32Array([this.thickness]))
+		device.queue.writeBuffer(this.colorBuffer, 0, new Float32Array(args.color))
+
 		this.vertexBuffer = device.createBuffer({
+			label: `surface line vertex buffer`,
 			size: mesh.vertices.length * THREE_NUMBERS_PER_3D_COORD * FOUR_BYTES_PER_FLOAT,
 			usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
 		})
 		device.queue.writeBuffer(this.vertexBuffer, 0, new Float32Array(mesh.vertices.flatMap((v) => v)))
+
+		this.indexBuffer = device.createBuffer({
+			label: `surface line index buffer`,
+			size: mesh.indices.length * FOUR_BYTES_PER_INT32,
+			usage: GPUBufferUsage.INDEX | GPUBufferUsage.COPY_DST,
+		})
+		device.queue.writeBuffer(this.indexBuffer, 0, new Uint32Array(mesh.indices))
 
 		this.normalBuffer = device.createBuffer({
 			size: mesh.normals.length * THREE_NUMBERS_PER_3D_COORD * FOUR_BYTES_PER_FLOAT,
@@ -177,11 +209,5 @@ export class LineMesh implements Mesh {
 			usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
 		})
 		device.queue.writeBuffer(this.miterLengthBuffer, 0, new Float32Array(mesh.miterLengths))
-
-		this.indexBuffer = device.createBuffer({
-			size: mesh.indices.length * FOUR_BYTES_PER_INT32,
-			usage: GPUBufferUsage.INDEX | GPUBufferUsage.COPY_DST,
-		})
-		device.queue.writeBuffer(this.indexBuffer, 0, new Uint32Array(mesh.indices))
 	}
 }

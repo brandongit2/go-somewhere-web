@@ -1,5 +1,3 @@
-import {clamp} from "@/util"
-
 export class Vec3 {
 	private _x: number
 	private _y: number
@@ -94,7 +92,7 @@ export class Vec3 {
 
 	static angleBetween = (a: Vec3, b: Vec3) => {
 		const angle = Vec3.dot(a, b) / (a.length * b.length)
-		return Math.acos(clamp(angle, -1, 1))
+		return Math.acos(angle)
 	}
 
 	static bisect = (a: Vec3, b: Vec3, magnitude?: number) => {
