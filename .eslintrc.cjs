@@ -45,6 +45,7 @@ module.exports = {
 				"@typescript-eslint/consistent-type-definitions": [`warn`, `type`],
 				"@typescript-eslint/consistent-type-imports": [`warn`, {fixStyle: `inline-type-imports`}],
 				"@typescript-eslint/no-unnecessary-condition": `warn`,
+				"@typescript-eslint/no-unnecessary-type-assertion": `warn`,
 				"@typescript-eslint/no-unused-vars": [`warn`, {ignoreRestSiblings: true}],
 				"@typescript-eslint/quotes": [`warn`, `backtick`],
 				"import/consistent-type-specifier-style": [`warn`, `prefer-inline`],

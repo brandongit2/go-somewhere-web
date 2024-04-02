@@ -16,6 +16,10 @@ export class MapTile {
 		if (tile.layers.road) this.layers.push(new MapLayer(mapContext, this, tile.layers.road, [0.8, 0.7, 0.1]))
 	}
 
+	preDraw = async () => {
+		await Promise.allSettled(this.layers.map((layer) => layer.preDraw()))
+	}
+
 	draw = (encoder: GPURenderPassEncoder) => {
 		this.layers.forEach((layer) => layer.draw(encoder))
 	}

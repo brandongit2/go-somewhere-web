@@ -1,42 +1,48 @@
-import {PX_PER_TILE} from "@/const"
+import {type Promisable} from "type-fest"
+
+import {FOUR_BYTES_PER_FLOAT32, fovX, PX_PER_TILE, SIXTEEN_NUMBERS_PER_MAT4} from "@/const"
 import {type Feature} from "@/map/features/Feature"
 import {Line} from "@/map/features/Line"
-import {SurfaceLine} from "@/map/features/SurfaceLine"
-import {MapContext} from "@/map/MapContext"
+import {type MapContext} from "@/map/MapContext"
+import {type MapTile} from "@/map/MapTile"
+import {TileManager} from "@/map/TileManager"
 import {Frustum} from "@/math/Frustum"
 import {Mat4} from "@/math/Mat4"
 import {Sphere} from "@/math/Sphere"
 import {Vec3} from "@/math/Vec3"
 import {Vec4} from "@/math/Vec4"
-import {type LngLat, type MercatorCoord, type TileId, type TileLocalCoord, type WorldCoord} from "@/types"
+import {type LngLat, type TileId, type TileLocalCoord, type WorldCoord} from "@/types"
 import {
 	breakDownTileId,
+	clamp,
 	degToRad,
 	lngLatToWorld,
 	tileIdToStr,
 	tileLocalCoordToLngLat,
 	tileToLngLat,
-	tileToMercator,
+	tileToWorld,
 } from "@/util"
 
-const CONSTRUCTOR_KEY = Symbol(`MapRoot constructor key`)
+const CONSTRUCTOR_KEY = Symbol(`\`MapRoot\` constructor key`)
 
 export class MapRoot {
-	private mapContext: MapContext = null! // Only way to construct a MapRoot is with MapRoot.create(). MapRoot.create() is assumed to set mapContext.
+	mapContext: MapContext | undefined
 	extraObjects: Feature[] = []
 
 	constructor(key: typeof CONSTRUCTOR_KEY) {
-		if (key !== CONSTRUCTOR_KEY) throw new Error(`MapRoot is not constructable. Use MapRoot.create() instead.`)
+		if (key !== CONSTRUCTOR_KEY) throw new Error(`\`MapRoot\` is not constructible. Use \`MapRoot.create()\` instead.`)
 	}
 
-	static create = async (canvasElement: HTMLCanvasElement): Promise<[MapRoot, MapContext]> => {
+	static create = async (canvasElement: HTMLCanvasElement) => {
 		const map = new MapRoot(CONSTRUCTOR_KEY)
 
 		const gpu = navigator.gpu
 		const adapter = await gpu.requestAdapter()
 		if (!adapter) throw new Error(`No suitable GPUs found.`)
 
-		const device = await adapter.requestDevice()
+		const device = await adapter.requestDevice({
+			requiredFeatures: [`shader-f16`],
+		})
 		device.lost
 			.then((info) => {
 				if (info.reason !== `destroyed`) throw new Error(`GPU lost. Info: ${info.message}`)
@@ -48,87 +54,108 @@ export class MapRoot {
 		const canvasContext = canvasElement.getContext(`webgpu`)
 		if (!canvasContext) throw new Error(`WebGPU not supported.`)
 
-		map.mapContext = new MapContext({
+		map.mapContext = {
+			windowHeight: null!,
+			windowWidth: null!,
+			cameraPos: {lng: 0, lat: 0},
+			zoom: 0,
+			tileManager: null!,
+
 			canvasContext,
 			canvasElement,
 			device,
+			presentationFormat: navigator.gpu.getPreferredCanvasFormat(),
+			depthTexture: null!,
+			viewMatrixBuffer: device.createBuffer({
+				label: `view matrix uniform buffer`,
+				size: 16 * 4 * 4,
+				usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+			}),
+		}
+		canvasContext.configure({
+			device,
+			format: map.mapContext.presentationFormat,
+		})
+		map.mapContext.viewMatrixBuffer = device.createBuffer({
+			label: `view matrix uniform buffer`,
+			size: SIXTEEN_NUMBERS_PER_MAT4 * FOUR_BYTES_PER_FLOAT32,
+			usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
 		})
 
-		map.extraObjects[0] = new SurfaceLine(map.mapContext, {lines: [], thickness: 0.01, color: [0, 0.6, 0.2]})
+		map.onResize()
+		map.mapContext.tileManager = new TileManager(map.mapContext)
+
+		map.extraObjects[0] = new Line(map.mapContext, {
+			lines: [],
+			thickness: 0.01,
+			viewPoint: [0, 0, 0] as WorldCoord,
+			color: [0, 0.6, 0.2],
+		})
 		map.extraObjects[1] = new Line(map.mapContext, {
 			lines: [
 				[
-					[-Math.PI / 2, 0, 1],
-					[Math.PI / 2, 0, 1],
+					[-Math.PI + 0.01, 0, 1],
+					[Math.PI - 0.01, 0, 1],
 				] as WorldCoord[],
 			],
 			thickness: 0.01,
+			viewPoint: lngLatToWorld(map.mapContext.cameraPos),
 			color: [1, 0, 0],
 		})
 
-		return [map, map.mapContext]
+		return map
 	}
 
 	destroy = () => {
-		this.mapContext.device.destroy()
+		this.mapContext?.device.destroy()
 	}
 
-	render = () => {
-		const {device, canvasContext, tileManager, depthTexture} = this.mapContext
+	onResize = () => {
+		if (!this.mapContext) return
+		const {device, canvasElement} = this.mapContext
 
-		const encoder = device.createCommandEncoder({label: `encoder`})
-		const pass = encoder.beginRenderPass({
-			label: `render pass`,
-			colorAttachments: [
-				{
-					view: canvasContext.getCurrentTexture().createView(),
-					clearValue: [0, 0, 0, 1],
-					loadOp: `clear`,
-					storeOp: `store`,
-				},
-			],
-			depthStencilAttachment: {
-				view: depthTexture.createView({label: `depth texture view`}),
-				depthClearValue: 0,
-				depthLoadOp: `clear`,
-				depthStoreOp: `store`,
-			},
+		this.mapContext.windowWidth = clamp(
+			canvasElement.getBoundingClientRect().width * devicePixelRatio,
+			1,
+			device.limits.maxTextureDimension2D,
+		)
+		this.mapContext.windowHeight = clamp(
+			canvasElement.getBoundingClientRect().height * devicePixelRatio,
+			1,
+			device.limits.maxTextureDimension2D,
+		)
+		canvasElement.width = this.mapContext.windowWidth
+		canvasElement.height = this.mapContext.windowHeight
+
+		this.mapContext.depthTexture = device.createTexture({
+			label: `depth texture`,
+			size: [this.mapContext.windowWidth, this.mapContext.windowHeight],
+			format: `depth24plus`,
+			usage: GPUTextureUsage.RENDER_ATTACHMENT,
 		})
-
-		tileManager.tilesInView.forEach((tileId) => {
-			let {zoom, x, y} = breakDownTileId(tileId)
-
-			// Try to find the tile in cache
-			let tile = tileManager.fetchTileFromCache(`${zoom}/${x}/${y}`)
-			// If it's not there (it should already be fetching), try to find a parent tile to render
-			while (!tile) {
-				;[x, y, zoom] = [x >> 1, y >> 1, zoom - 1]
-				tile = tileManager.fetchTileFromCache(`${zoom}/${x}/${y}`)
-				if (zoom <= 0) return
-			}
-
-			tile.draw(pass)
-		})
-		this.extraObjects.forEach((obj) => obj.draw(pass))
-
-		pass.end()
-		const commandBuffer = encoder.finish()
-		device.queue.submit([commandBuffer])
 	}
 
-	updateCamera = () => {
-		const {tileManager, device, viewMatrixBuffer, cameraPos, zoom, windowWidth, windowHeight} = this.mapContext
+	beforeNextRender: Array<() => Promisable<void>> = []
+	render = async () => {
+		if (!this.mapContext) return
+		const {
+			device,
+			canvasContext,
+			tileManager,
+			depthTexture,
+			viewMatrixBuffer,
+			cameraPos,
+			zoom,
+			windowHeight,
+			windowWidth,
+		} = this.mapContext
 
-		this.mapContext.canvasElement.width = windowWidth
-		this.mapContext.canvasElement.height = windowHeight
-		this.mapContext.createDepthTexture()
-
-		const fovX = 75
 		let viewMatrix = Mat4.makePerspective(fovX, windowWidth / windowHeight, 0.000001)
 		const distance = cameraDistanceFromZoom(zoom)
 		const cameraPosWorld = new Vec3(lngLatToWorld(cameraPos, distance + 1))
 		const rotationMatrix = Mat4.lookAt(cameraPosWorld, new Vec3(0, 0, 0), new Vec3(0, 1, 0))
 		viewMatrix = Mat4.mul(viewMatrix, rotationMatrix)
+		device.queue.writeBuffer(viewMatrixBuffer, 0, new Float32Array(viewMatrix))
 
 		const visibleTiles: TileId[] = []
 		const stack: TileId[] = [{zoom: 0, x: 0, y: 0}]
@@ -154,27 +181,89 @@ export class MapRoot {
 		}
 
 		tileManager.setTilesInView(visibleTiles.map((tileId) => tileIdToStr(tileId)))
-		;(this.extraObjects[0] as SurfaceLine).set({
-			lines: visibleTiles.map(
-				({zoom, x, y}) =>
-					[
-						tileToMercator({zoom, x, y}),
-						tileToMercator({zoom, x: x + 1, y}),
-						tileToMercator({zoom, x: x + 1, y: y + 1}),
-						tileToMercator({zoom, x, y: y + 1}),
-						tileToMercator({zoom, x, y}),
-					] as MercatorCoord[],
-			),
-			thickness: 0.01,
-			color: [0, 0.6, 0.2],
+		;(this.extraObjects[0] as Line)
+			.setGeom(
+				visibleTiles.map(
+					({zoom, x, y}) =>
+						[
+							tileToWorld({zoom, x, y}),
+							tileToWorld({zoom, x: x + 1, y}),
+							tileToWorld({zoom, x: x + 1, y: y + 1}),
+							tileToWorld({zoom, x, y: y + 1}),
+							tileToWorld({zoom, x, y}),
+						] as WorldCoord[],
+				),
+			)
+			.catch((err) => {
+				throw err
+			})
+
+		const tilesToDraw: MapTile[] = []
+		tileManager.tilesInView.forEach((tileId) => {
+			// Try to find the tile in cache
+			let tile = tileManager.fetchTileFromCache(tileId)
+			// If it's not there (it should already be fetching), try to find a parent tile to render
+			if (!tile) {
+				let {zoom, x, y} = breakDownTileId(tileId)
+				while (!tile) {
+					;[x, y, zoom] = [x >> 1, y >> 1, zoom - 1]
+					tile = tileManager.fetchTileFromCache(`${zoom}/${x}/${y}`)
+					if (zoom <= 0) return
+				}
+			}
+
+			tilesToDraw.push(tile)
 		})
 
-		device.queue.writeBuffer(viewMatrixBuffer, 0, new Float32Array(viewMatrix))
+		await Promise.allSettled([
+			...tilesToDraw.map(async (tile) => await tile.preDraw()),
+			...this.beforeNextRender.map((fn) => fn()),
+		])
+		this.beforeNextRender = []
+
+		const encoder = device.createCommandEncoder({label: `encoder`})
+		const pass = encoder.beginRenderPass({
+			label: `render pass`,
+			colorAttachments: [
+				{
+					view: canvasContext.getCurrentTexture().createView({label: `colour texture view`}),
+					clearValue: [0, 0, 0, 1],
+					loadOp: `clear`,
+					storeOp: `store`,
+				},
+			],
+			depthStencilAttachment: {
+				view: depthTexture.createView({label: `depth texture view`}),
+				depthClearValue: 0,
+				depthLoadOp: `clear`,
+				depthStoreOp: `store`,
+			},
+		})
+
+		tilesToDraw.forEach((tile) => tile.draw(pass))
+		this.extraObjects.forEach((obj) => obj.draw(pass))
+
+		pass.end()
+		const commandBuffer = encoder.finish()
+		device.queue.submit([commandBuffer])
+	}
+
+	zoomChangeAmt = 0
+	setZoom = (newZoom: number) => {
+		if (!this.mapContext) return
+
+		this.zoomChangeAmt += newZoom - this.mapContext.zoom
+
+		this.beforeNextRender.push(() => {
+			if (!this.mapContext) return
+			this.mapContext.zoom = clamp(this.mapContext.zoom + this.zoomChangeAmt, 0, 18)
+			this.zoomChangeAmt = 0
+		})
 	}
 }
 
 // Distance to surface of globe
-const cameraDistanceFromZoom = (zoom: number) => (Math.PI / 2 / Math.tan(degToRad(75) / 2)) * 2 ** -zoom
+const cameraDistanceFromZoom = (zoom: number) => (Math.PI / Math.tan(degToRad(fovX) / 2)) * 2 ** -zoom
 
 const getPointsToSample = (tile: TileId, cameraPos: LngLat): LngLat[] => {
 	const buffer = 0.05
@@ -270,10 +359,10 @@ const isTileTooBig = (
 		const pointWorldPos = new Vec3(lngLatToWorld(point))
 		const west = Vec3.cross(pointWorldPos, new Vec3(0, 1, 0))
 			.normalized()
-			.times((referenceTileSize / 2) * zoomFactor * latitudeFactor)
+			.scaledBy((referenceTileSize / 2) * zoomFactor * latitudeFactor)
 		const north = Vec3.cross(west, pointWorldPos)
 			.normalized()
-			.times((referenceTileSize / 2) * zoomFactor * latitudeFactor)
+			.scaledBy((referenceTileSize / 2) * zoomFactor * latitudeFactor)
 
 		const centerProjected = Vec4.perspectiveDivide(Vec4.applyMat4(new Vec4(...pointWorldPos.toTuple(), 1), viewMatrix))
 		const westProjected = Vec4.perspectiveDivide(

@@ -13,8 +13,8 @@ export class Plane {
 	}
 
 	normalize() {
-		const inverseNormalLength = 1.0 / this.normal.length
-		this.normal = this.normal.times(inverseNormalLength)
+		const inverseNormalLength = 1.0 / this.normal.length()
+		this.normal = this.normal.scaledBy(inverseNormalLength)
 		this.constant *= inverseNormalLength
 		return this
 	}

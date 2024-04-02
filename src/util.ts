@@ -111,5 +111,7 @@ export const tileToMercator = (tileId: TileId): MercatorCoord => {
 	return [x / tileCount, y / tileCount] as MercatorCoord
 }
 
+export const tileToWorld = (tileId: TileId, radius = 1): WorldCoord => lngLatToWorld(tileToLngLat(tileId), radius)
+
 export const vec2ArrayToVec3Array = (array: number[]) =>
 	array.flatMap((coord, i) => (i % 2 === 0 ? [coord] : [coord, 0]))

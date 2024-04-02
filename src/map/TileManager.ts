@@ -57,8 +57,8 @@ export class TileManager {
 							properties: feature.properties,
 							geometry: feature
 								.loadGeometry()
-								.map((ring) =>
-									ring.map((coord) =>
+								.map((shape) =>
+									shape.map((coord) =>
 										tileLocalCoordToMercator([coord.x, coord.y] as TileLocalCoord, {zoom, x, y}, feature.extent),
 									),
 								),
