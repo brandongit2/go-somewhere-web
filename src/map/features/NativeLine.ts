@@ -1,24 +1,26 @@
-import shader from "./polygon.wgsl"
+import shader from "./native-line.wgsl"
 import {FOUR_BYTES_PER_FLOAT32, FOUR_BYTES_PER_INT32, THREE_NUMBERS_PER_3D_COORD} from "@/const"
 import {type MapRoot} from "@/map/MapRoot"
 import {type Coord3d, type MapObject, type WorldCoord} from "@/types"
 
-type PolygonArgs = {
-	indices: number[]
+export type NativeLineArgs = {
+	indices: number[][]
 	vertices: WorldCoord[]
 	color: Coord3d
 }
 
-export class Polygon implements MapObject {
-	vertexBuffer: GPUBuffer
-	indexBuffer: GPUBuffer
-	colorBuffer: GPUBuffer
+export class NativeLine implements MapObject {
 	bindGroup: GPUBindGroup
 	renderPipeline: GPURenderPipeline
+	indexBuffer: GPUBuffer | undefined
+	numIndices = 0
+	vertexBuffer: GPUBuffer | undefined
+	numVertices = 0
+	colorBuffer: GPUBuffer
 
 	constructor(
 		private map: MapRoot,
-		args: PolygonArgs,
+		args: NativeLineArgs,
 	) {
 		const {
 			camera,
@@ -26,17 +28,15 @@ export class Polygon implements MapObject {
 		} = map
 
 		this.colorBuffer = device.createBuffer({
-			label: `polygon colour buffer`,
+			label: `line colour buffer`,
 			size: 3 * FOUR_BYTES_PER_FLOAT32,
 			usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
 		})
 
-		this.vertexBuffer = null!
-		this.indexBuffer = null!
-		this.set(args) // Above lines are to appease TypeScript; this line is the real initialization
+		this.set(args)
 
 		const bindGroupLayout = device.createBindGroupLayout({
-			label: `polygon bind group layout`,
+			label: `native line bind group layout`,
 			entries: [
 				{
 					// `projectionMatrix`
@@ -60,12 +60,12 @@ export class Polygon implements MapObject {
 		})
 
 		const pipelineLayout = device.createPipelineLayout({
-			label: `polygon pipeline layout`,
+			label: `native line pipeline layout`,
 			bindGroupLayouts: [bindGroupLayout],
 		})
 
 		const bindGroup = device.createBindGroup({
-			label: `polygon bind group`,
+			label: `native line bind group`,
 			layout: bindGroupLayout,
 			entries: [
 				{
@@ -84,11 +84,11 @@ export class Polygon implements MapObject {
 		})
 
 		const renderPipeline = device.createRenderPipeline({
-			label: `polygon render pipeline`,
+			label: `native line render pipeline`,
 			layout: pipelineLayout,
 			vertex: {
 				module: device.createShaderModule({
-					label: `polygon vertex shader`,
+					label: `native line vertex shader`,
 					code: shader,
 				}),
 				entryPoint: `vs`,
@@ -102,19 +102,20 @@ export class Polygon implements MapObject {
 			},
 			fragment: {
 				module: device.createShaderModule({
-					label: `polygon fragment shader`,
+					label: `native line fragment shader`,
 					code: shader,
 				}),
 				entryPoint: `fs`,
 				targets: [{format: presentationFormat}],
 			},
-			primitive: {
-				cullMode: `back`,
-			},
 			depthStencil: {
 				depthWriteEnabled: true,
 				depthCompare: `greater`,
 				format: `depth24plus`,
+			},
+			primitive: {
+				topology: `line-strip`,
+				stripIndexFormat: `uint32`,
 			},
 		})
 
@@ -123,34 +124,46 @@ export class Polygon implements MapObject {
 	}
 
 	draw = (pass: GPURenderPassEncoder) => {
+		if (!this.indexBuffer || !this.vertexBuffer) return
+
 		pass.setPipeline(this.renderPipeline)
 		pass.setBindGroup(0, this.bindGroup)
 
 		pass.setIndexBuffer(this.indexBuffer, `uint32`)
 		pass.setVertexBuffer(0, this.vertexBuffer)
-		pass.drawIndexed(this.indexBuffer.size / FOUR_BYTES_PER_INT32)
+		pass.drawIndexed(this.numIndices)
 	}
 
-	set = (args: PolygonArgs) => {
-		;(this.vertexBuffer as typeof this.vertexBuffer | undefined)?.destroy()
-		;(this.indexBuffer as typeof this.indexBuffer | undefined)?.destroy()
-
+	set = (args: NativeLineArgs) => {
 		const {device} = this.map.canvas
 
-		this.indexBuffer = device.createBuffer({
-			label: `polygon index buffer`,
-			size: args.indices.length * FOUR_BYTES_PER_INT32,
-			usage: GPUBufferUsage.INDEX | GPUBufferUsage.COPY_DST,
-		})
-		device.queue.writeBuffer(this.indexBuffer, 0, new Uint32Array(args.indices))
+		const indices: number[] = []
+		for (let i = 0; i < args.indices.length; i++) {
+			const line = args.indices[i]!
+			if (i > 0) indices.push(0, 0, 0, 0)
+			indices.push(...line)
+		}
 
-		this.vertexBuffer = device.createBuffer({
-			label: `polygon vertex buffer`,
-			size: args.vertices.length * THREE_NUMBERS_PER_3D_COORD * FOUR_BYTES_PER_FLOAT32,
-			usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
-		})
+		const oldVertexBuffer = this.vertexBuffer
+		if (!this.vertexBuffer || this.vertexBuffer.size < this.numVertices * FOUR_BYTES_PER_FLOAT32) {
+			this.vertexBuffer = device.createBuffer({
+				label: `native line vertex buffer`,
+				size: args.vertices.length * THREE_NUMBERS_PER_3D_COORD * FOUR_BYTES_PER_FLOAT32,
+				usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
+			})
+			oldVertexBuffer?.destroy()
+		}
 		device.queue.writeBuffer(this.vertexBuffer, 0, new Float32Array(args.vertices.flat()))
 
-		device.queue.writeBuffer(this.colorBuffer, 0, new Float32Array(args.color))
+		const oldIndexBuffer = this.indexBuffer
+		if (!this.indexBuffer || this.indexBuffer.size < this.numVertices * FOUR_BYTES_PER_FLOAT32) {
+			this.vertexBuffer = device.createBuffer({
+				label: `native line index buffer`,
+				size: indices.length * FOUR_BYTES_PER_INT32,
+				usage: GPUBufferUsage.INDEX | GPUBufferUsage.COPY_DST,
+			})
+			oldIndexBuffer?.destroy()
+		}
+		device.queue.writeBuffer(this.vertexBuffer, 0, new Int32Array(indices))
 	}
 }

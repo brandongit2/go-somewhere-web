@@ -5,6 +5,7 @@ import {
 	type WorldCoord,
 	type LngLat,
 	type TileIdStr,
+	type Coord2d,
 } from "@/types"
 
 export const breakDownTileId = (tileId: TileIdStr) => {
@@ -16,12 +17,12 @@ export const clamp = (value: number, min: number, max: number) => Math.min(Math.
 
 export const degToRad = (a: number) => a * (Math.PI / 180)
 
-export const groupByTwos = (vertexArray: number[]) => {
+export const groupByTwos = <T extends Coord2d = Coord2d>(vertexArray: number[]) => {
 	if (vertexArray.length % 2 !== 0) throw new Error(`vertexArray must have an even number of elements.`)
 
-	const coordArray: Array<[number, number]> = []
+	const coordArray: T[] = []
 	for (let i = 0; i < vertexArray.length; i += 2) {
-		coordArray.push([vertexArray[i]!, vertexArray[i + 1]!])
+		coordArray.push([vertexArray[i]!, vertexArray[i + 1]!] as T)
 	}
 	return coordArray
 }

@@ -6,14 +6,14 @@ test(`Add \`Vec3\`s`, () => {
 	const a = new Vec3(1, 2, 3)
 	const b = new Vec3(4, 5, 6)
 
-	expect(Vec3.add(a, b).toTuple()).toEqual([5, 7, 9])
+	expect(Vec3.add(null, a, b).toTuple()).toEqual([5, 7, 9])
 })
 
 test(`Subtract \`Vec3\`s`, () => {
 	const a = new Vec3(1, 2, 3)
 	const b = new Vec3(4, 5, 6)
 
-	expect(Vec3.sub(a, b).toTuple()).toEqual([-3, -3, -3])
+	expect(Vec3.subtract(null, a, b).toTuple()).toEqual([-3, -3, -3])
 })
 
 test.describe(`Find dot product of two \`Vec3\`s`, () => {
@@ -27,7 +27,7 @@ test.describe(`Find cross product of two \`Vec3\`s`, () => {
 	const a = new Vec3(3, 4, 1)
 	const b = new Vec3(2, 4, 0)
 
-	expect(Vec3.cross(a, b).toTuple()).toEqual([-4, 2, 4])
+	expect(Vec3.cross(null, a, b).toTuple()).toEqual([-4, 2, 4])
 })
 
 test.describe(`Find angle between two \`Vec3\`s`, () => {
@@ -67,10 +67,9 @@ test.describe(`Find length of a \`Vec3\``, () => {
 })
 
 test.describe(`Normalize a \`Vec3\``, () => {
-	const v = new Vec3(1, 2, 3)
-	const n = Vec3.normalize(v)
+	const v = new Vec3(1, 2, 3).normalize()
 
-	expect(n.x).toEqual(0.267261)
-	expect(n.y).toEqual(0.534522)
-	expect(n.z).toEqual(0.801784)
+	expect(v.x).toBeCloseTo(0.267261)
+	expect(v.y).toBeCloseTo(0.534522)
+	expect(v.z).toBeCloseTo(0.801784)
 })

@@ -1,14 +1,12 @@
-import {type Feature} from "./Feature"
 import shader from "./line.wgsl"
 import {
 	FOUR_BYTES_PER_FLOAT32,
 	FOUR_BYTES_PER_INT32,
 	THREE_NUMBERS_PER_3D_COORD,
-	TWO_BYTES_PER_FLOAT16,
 	TWO_NUMBERS_PER_2D_COORD,
 } from "@/const"
-import {type MapContext} from "@/map/MapContext"
-import {type Coord3d, type WorldCoord} from "@/types"
+import {type MapRoot} from "@/map/MapRoot"
+import {type Coord3d, type MapObject, type WorldCoord} from "@/types"
 import {dispatchToWorker} from "@/worker-pool"
 import {type LinestringsToMeshArgs} from "@/workers/linestrings-to-mesh"
 
@@ -19,7 +17,7 @@ type LineArgs = {
 	color: Coord3d
 }
 
-export class Line implements Feature {
+export class Line implements MapObject {
 	private linestringsBuffer = new SharedArrayBuffer(0, {maxByteLength: 1.2e6})
 	private linestringsBufferSize = 0
 	private numVertices: number | undefined
@@ -35,10 +33,13 @@ export class Line implements Feature {
 	renderPipeline: GPURenderPipeline
 
 	constructor(
-		private mapContext: MapContext,
+		private map: MapRoot,
 		args: LineArgs,
 	) {
-		const {device, viewMatrixBuffer} = mapContext
+		const {
+			camera,
+			canvas: {device, presentationFormat},
+		} = map
 
 		this.colorBuffer = device.createBuffer({
 			label: `line colour buffer`,
@@ -54,14 +55,20 @@ export class Line implements Feature {
 			label: `line bind group layout`,
 			entries: [
 				{
-					// `viewMatrix`
+					// `projectionMatrix`
 					binding: 0,
 					visibility: GPUShaderStage.VERTEX,
 					buffer: {type: `uniform`},
 				},
 				{
-					// `color`
+					// `viewMatrix`
 					binding: 1,
+					visibility: GPUShaderStage.VERTEX,
+					buffer: {type: `uniform`},
+				},
+				{
+					// `color`
+					binding: 2,
 					visibility: GPUShaderStage.FRAGMENT,
 					buffer: {type: `uniform`},
 				},
@@ -79,10 +86,14 @@ export class Line implements Feature {
 			entries: [
 				{
 					binding: 0,
-					resource: {buffer: viewMatrixBuffer},
+					resource: {buffer: camera.projectionMatrixBuffer},
 				},
 				{
 					binding: 1,
+					resource: {buffer: camera.viewMatrixBuffer},
+				},
+				{
+					binding: 2,
 					resource: {buffer: this.colorBuffer},
 				},
 			],
@@ -105,8 +116,8 @@ export class Line implements Feature {
 					},
 					{
 						// `uv`
-						arrayStride: TWO_NUMBERS_PER_2D_COORD * TWO_BYTES_PER_FLOAT16,
-						attributes: [{shaderLocation: 1, offset: 0, format: `float16x2`}],
+						arrayStride: TWO_NUMBERS_PER_2D_COORD * FOUR_BYTES_PER_FLOAT32,
+						attributes: [{shaderLocation: 1, offset: 0, format: `float32x2`}],
 					},
 				],
 			},
@@ -116,7 +127,7 @@ export class Line implements Feature {
 					code: shader,
 				}),
 				entryPoint: `fs`,
-				targets: [{format: mapContext.presentationFormat}],
+				targets: [{format: presentationFormat}],
 			},
 			depthStencil: {
 				depthWriteEnabled: true,
@@ -150,7 +161,7 @@ export class Line implements Feature {
 	}
 
 	setColor = (color: Coord3d) => {
-		this.mapContext.device.queue.writeBuffer(this.colorBuffer, 0, new Float32Array(color))
+		this.map.canvas.device.queue.writeBuffer(this.colorBuffer, 0, new Float32Array(color))
 	}
 
 	private setGeomImpl = (lines: WorldCoord[][]) => {
@@ -204,10 +215,9 @@ export class Line implements Feature {
 		this.indicesSize = indicesSize
 		const indices = new Uint32Array(buffer, 0, indicesSize / FOUR_BYTES_PER_INT32)
 		const vertices = new Float32Array(buffer, indicesSize, verticesSize / FOUR_BYTES_PER_FLOAT32)
-		// I would construct this with `Float16Array` but since it's a polyfill it does weird things. I use `Int16Array` instead; I hope it's fine.
-		const uvs = new Int16Array(buffer, indicesSize + verticesSize, uvsSize / TWO_BYTES_PER_FLOAT16)
+		const uvs = new Float32Array(buffer, indicesSize + verticesSize, uvsSize / FOUR_BYTES_PER_FLOAT32)
 
-		const {device} = this.mapContext
+		const {device} = this.map.canvas
 
 		if (!this.indexBuffer || this.indexBuffer.size < indicesSize) {
 			this.indexBuffer = device.createBuffer({

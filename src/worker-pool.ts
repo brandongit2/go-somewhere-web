@@ -4,6 +4,7 @@ type Task<ActionName extends ActionNames> = {
 	action: ActionName
 	args: WorkerActions[ActionName]["args"]
 	options?: StructuredSerializeOptions
+	onAttachWorker: (worker: Worker) => void
 	resolve: (data: WorkerActions[ActionName]["return"]) => void
 }
 const taskQueue: Array<Task<ActionNames>> = []
@@ -20,6 +21,7 @@ class PoolWorker {
 			this.busy = false
 			return
 		}
+		task.onAttachWorker(this.worker)
 
 		this.worker.onmessage = (event: MessageEvent<WorkerActions[typeof task.action]["return"]>) => {
 			task.resolve(event.data)
@@ -31,15 +33,24 @@ class PoolWorker {
 	}
 }
 
-const workers = typeof window === `undefined` ? [] : Array.from({length: 6}, () => new PoolWorker())
+const workers = typeof window === `undefined` ? [] : Array.from({length: 3}, () => new PoolWorker())
 
 export const dispatchToWorker = async <ActionName extends ActionNames>(
 	action: ActionName,
 	args: WorkerActions[ActionName]["args"],
-	options?: StructuredSerializeOptions,
+	options?: StructuredSerializeOptions & {signal?: AbortSignal},
 ) =>
 	new Promise<WorkerActions[ActionName]["return"]>((resolve) => {
-		taskQueue.push({action, args, options, resolve})
+		taskQueue.push({
+			action,
+			args,
+			options,
+			onAttachWorker: (worker) => {
+				if (options?.signal) options.signal.addEventListener(`abort`, () => worker.postMessage(`abort`))
+			},
+			resolve,
+		})
+
 		const worker = workers.find((worker) => !worker.busy)
 		if (worker) worker.findTask()
 	})

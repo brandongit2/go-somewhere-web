@@ -1,8 +1,7 @@
 import {Vec3} from "@/math/Vec3"
-import {type Coord3d} from "@/types"
-import {degToRad} from "@/util"
 
 // prettier-ignore
+// `Mat4Elements` is always in column-major order.
 type Mat4Elements = [
 	number, number, number, number,
 	number, number, number, number,
@@ -11,16 +10,27 @@ type Mat4Elements = [
 ]
 
 export class Mat4 {
-	// prettier-ignore
-	private _elements: Mat4Elements = [
-			1, 0, 0, 0,
-			0, 1, 0, 0,
-			0, 0, 1, 0,
-			0, 0, 0, 1,
-		]
+	_11: number = null!
+	_12: number = null!
+	_13: number = null!
+	_14: number = null!
+	_21: number = null!
+	_22: number = null!
+	_23: number = null!
+	_24: number = null!
+	_31: number = null!
+	_32: number = null!
+	_33: number = null!
+	_34: number = null!
+	_41: number = null!
+	_42: number = null!
+	_43: number = null!
+	_44: number = null!
 
 	constructor()
+	constructor(a: Mat4)
 	constructor(elements: Mat4Elements)
+	constructor(v1: Vec3, v2: Vec3, v3: Vec3)
 	// prettier-ignore
 	constructor(
 		_11: number, _12: number, _13: number, _14: number,
@@ -30,206 +40,154 @@ export class Mat4 {
 	)
 	// prettier-ignore
 	constructor(
-		_11OrArr?: number | Mat4Elements, _12?: number, _13?: number, _14?: number,
-		_21?: number,                     _22?: number, _23?: number, _24?: number,
-		_31?: number,                     _32?: number, _33?: number, _34?: number,
-		_41?: number,                     _42?: number, _43?: number, _44?: number,
+		_11?: number | Mat4 | Mat4Elements | Vec3, _12?: number | Vec3, _13?: number | Vec3, _14?: number,
+		_21?: number,                              _22?: number,        _23?: number,        _24?: number,
+		_31?: number,                              _32?: number,        _33?: number,        _34?: number,
+		_41?: number,                              _42?: number,        _43?: number,        _44?: number,
 	) {
-		if (_11OrArr === undefined)
-			// prettier-ignore
+		if (_11 === undefined) {
 			this.set(
 				1, 0, 0, 0,
 				0, 1, 0, 0,
 				0, 0, 1, 0,
 				0, 0, 0, 1,
 			)
-		else if (typeof _11OrArr === `number`)
-			// prettier-ignore
+		} else if (typeof _11 === `number`) {
 			this.set(
-				_11OrArr, _12!, _13!, _14!,
-				_21!,     _22!, _23!, _24!,
-				_31!,     _32!, _33!, _34!,
-				_41!,     _42!, _43!, _44!,
+				_11,  _12 as number, _13 as number, _14!,
+				_21!, _22!,          _23!,          _24!,
+				_31!, _32!,          _33!,          _34!,
+				_41!, _42!,          _43!,          _44!,
 			)
-		else this.set(..._11OrArr)
-	}
-
-	private cache = {
-		inverse: undefined as Mat4 | undefined,
-	}
-
-	private clearCache = () => {
-		for (const key in this.cache) this.cache[key as keyof typeof this.cache] = undefined
-	}
-
-	get elements() {
-		return this._elements
-	}
-
-	get inverse() {
-		if (this.cache.inverse === undefined) this.cache.inverse = Mat4.invert(this)
-		return this.cache.inverse
-	}
-
-	*[Symbol.iterator]() {
-		for (const e of this._elements) yield e
+		}
+		else if (_11 instanceof Mat4) this.set(_11)
+		else if (_11 instanceof Vec3) this.set(_11, _12 as Vec3, _13 as Vec3)
+		else this.set(_11)
 	}
 
 	// prettier-ignore
-	set = (
-		_11: number, _12: number, _13: number, _14: number,
-		_21: number, _22: number, _23: number, _24: number,
-		_31: number, _32: number, _33: number, _34: number,
-		_41: number, _42: number, _43: number, _44: number,
+	set: {
+		(a: Mat4): Mat4
+		(elements: Mat4Elements): Mat4
+		(v1: Vec3, v2: Vec3, v3: Vec3): Mat4
+		(
+			_11: number, _12: number, _13: number, _14: number,
+			_21: number, _22: number, _23: number, _24: number,
+			_31: number, _32: number, _33: number, _34: number,
+			_41: number, _42: number, _43: number, _44: number,
+		): Mat4
+	} = (
+		_11OrOthers: number | Mat4 | Mat4Elements | Vec3, _12OrV2?: number | Vec3, _13OrV3?: number | Vec3, _14?: number,
+		_21?: number,                                     _22?: number,            _23?: number,            _24?: number,
+		_31?: number,                                     _32?: number,            _33?: number,            _34?: number,
+		_41?: number,                                     _42?: number,            _43?: number,            _44?: number,
 	) => {
-		// prettier-ignore
-		this._elements = [
-			_11, _21, _31, _41,
-			_12, _22, _32, _42,
-			_13, _23, _33, _43,
-			_14, _24, _34, _44,
-		]
+		if (_11OrOthers instanceof Mat4) {
+			const m = _11OrOthers
+			this._11 = m._11; this._12 = m._12; this._13 = m._13; this._14 = m._14
+			this._21 = m._21; this._22 = m._22; this._23 = m._23; this._24 = m._24
+			this._31 = m._31; this._32 = m._32; this._33 = m._33; this._34 = m._34
+			this._41 = m._41; this._42 = m._42; this._43 = m._43; this._44 = m._44
+		} else if (Array.isArray(_11OrOthers)) {
+			const e = _11OrOthers
+			this._11 = e[0];  this._12 = e[4];  this._13 = e[8];  this._14 = e[12]
+			this._21 = e[1];  this._22 = e[5];  this._23 = e[9];  this._24 = e[13]
+			this._31 = e[2];  this._32 = e[6];  this._33 = e[10]; this._34 = e[14]
+			this._41 = e[3];  this._42 = e[7];  this._43 = e[11]; this._44 = e[15]
+		} else if (_11OrOthers instanceof Vec3) {
+			const v1 = _11OrOthers, v2 = _12OrV2 as Vec3, v3 = _13OrV3 as Vec3
+			this._11 = v1.x; this._12 = v2.x; this._13 = v3.x; this._14 = 0
+			this._21 = v1.y; this._22 = v2.y; this._23 = v3.y; this._24 = 0
+			this._31 = v1.z; this._32 = v2.z; this._33 = v3.z; this._34 = 0
+			this._41 = 0;    this._42 = 0;    this._43 = 0;    this._44 = 1
+		} else {
+			this._11 = _11OrOthers; this._12 = _12OrV2 as number; this._13 = _13OrV3 as number; this._14 = _14!
+			this._21 = _21!;        this._22 = _22!;              this._23 = _23!;              this._24 = _24!
+			this._31 = _31!;        this._32 = _32!;              this._33 = _33!;              this._34 = _34!
+			this._41 = _41!;        this._42 = _42!;              this._43 = _43!;              this._44 = _44!
+		}
 		return this
 	}
 
-	timesScalar = (s: number) => Mat4.mulScalar(this, s)
-
-	transposed = () => Mat4.transpose(this)
-
-	static invert = (mat: Mat4) => {
-		const m = mat._elements
-
-		const a0 = m[0] * m[5] - m[1] * m[4]
-		const a1 = m[0] * m[6] - m[2] * m[4]
-		const a2 = m[0] * m[7] - m[3] * m[4]
-		const a3 = m[1] * m[6] - m[2] * m[5]
-		const a4 = m[1] * m[7] - m[3] * m[5]
-		const a5 = m[2] * m[7] - m[3] * m[6]
-		const b0 = m[8] * m[13] - m[9] * m[12]
-		const b1 = m[8] * m[14] - m[10] * m[12]
-		const b2 = m[8] * m[15] - m[11] * m[12]
-		const b3 = m[9] * m[14] - m[10] * m[13]
-		const b4 = m[9] * m[15] - m[11] * m[13]
-		const b5 = m[10] * m[15] - m[11] * m[14]
-
-		const det = a0 * b5 - a1 * b4 + a2 * b3 + a3 * b2 - a4 * b1 + a5 * b0
-		if (det === 0) throw new Error(`Matrix is not invertible.`)
-
+	toTuple() {
 		// prettier-ignore
-		return new Mat4([
-			( m[5]  * b5 - m[6]  * b4 + m[7]  * b3) / det,
-			(-m[1]  * b5 + m[2]  * b4 - m[3]  * b3) / det,
-			( m[13] * a5 - m[14] * a4 + m[15] * a3) / det,
-			(-m[9]  * a5 + m[10] * a4 - m[11] * a3) / det,
-
-			(-m[4]  * b5 + m[6]  * b2 - m[7]  * b1) / det,
-			( m[0]  * b5 - m[2]  * b2 + m[3]  * b1) / det,
-			(-m[12] * a5 + m[14] * a2 - m[15] * a1) / det,
-			( m[8]  * a5 - m[10] * a2 + m[11] * a1) / det,
-
-			( m[4]  * b4 - m[5]  * b2 + m[7]  * b0) / det,
-			(-m[0]  * b4 + m[1]  * b2 - m[3]  * b0) / det,
-			( m[12] * a4 - m[13] * a2 + m[15] * a0) / det,
-			(-m[8]  * a4 + m[9]  * a2 - m[11] * a0) / det,
-
-			(-m[4]  * b3 + m[5]  * b1 - m[6]  * b0) / det,
-			( m[0]  * b3 - m[1]  * b1 + m[2]  * b0) / det,
-			(-m[12] * a3 + m[13] * a1 - m[14] * a0) / det,
-			( m[8]  * a3 - m[9]  * a1 + m[10] * a0) / det,
-		])
+		return [
+			this._11, this._21, this._31, this._41,
+			this._12, this._22, this._32, this._42,
+			this._13, this._23, this._33, this._43,
+			this._14, this._24, this._34, this._44,
+		] as Mat4Elements
 	}
 
-	static lookAt = (eye: Vec3, target: Vec3, up: Vec3) => {
-		const z = Vec3.sub(eye, target).normalized()
-		const x = Vec3.cross(up, z).normalized()
-		const y = Vec3.cross(z, x).normalized()
+	// prettier-ignore
+	// This yields elements in column-major order, just like `Mat4Elements`.
+	*[Symbol.iterator]() {
+		yield this._11; yield this._21; yield this._31; yield this._41
+		yield this._12; yield this._22; yield this._32; yield this._42
+		yield this._13; yield this._23; yield this._33; yield this._43
+		yield this._14; yield this._24; yield this._34; yield this._44
+	}
+
+	private static mulImpl = (m: Mat4, a: Mat4, b: Mat4) => {
+		m._11 = a._11 * b._11 + a._12 * b._21 + a._13 * b._31 + a._14 * b._41
+		m._12 = a._11 * b._12 + a._12 * b._22 + a._13 * b._32 + a._14 * b._42
+		m._13 = a._11 * b._13 + a._12 * b._23 + a._13 * b._33 + a._14 * b._43
+		m._14 = a._11 * b._14 + a._12 * b._24 + a._13 * b._34 + a._14 * b._44
+
+		m._21 = a._21 * b._11 + a._22 * b._21 + a._23 * b._31 + a._24 * b._41
+		m._22 = a._21 * b._12 + a._22 * b._22 + a._23 * b._32 + a._24 * b._42
+		m._23 = a._21 * b._13 + a._22 * b._23 + a._23 * b._33 + a._24 * b._43
+		m._24 = a._21 * b._14 + a._22 * b._24 + a._23 * b._34 + a._24 * b._44
+
+		m._31 = a._31 * b._11 + a._32 * b._21 + a._33 * b._31 + a._34 * b._41
+		m._32 = a._31 * b._12 + a._32 * b._22 + a._33 * b._32 + a._34 * b._42
+		m._33 = a._31 * b._13 + a._32 * b._23 + a._33 * b._33 + a._34 * b._43
+		m._34 = a._31 * b._14 + a._32 * b._24 + a._33 * b._34 + a._34 * b._44
+
+		m._41 = a._41 * b._11 + a._42 * b._21 + a._43 * b._31 + a._44 * b._41
+		m._42 = a._41 * b._12 + a._42 * b._22 + a._43 * b._32 + a._44 * b._42
+		m._43 = a._41 * b._13 + a._42 * b._23 + a._43 * b._33 + a._44 * b._43
+		m._44 = a._41 * b._14 + a._42 * b._24 + a._43 * b._34 + a._44 * b._44
+
+		return m
+	}
+	static multiply = (m: Mat4 | null, ...matrices: Mat4[]) => {
+		m = m ?? new Mat4()
+		if (matrices.length === 0) return m
+
+		m.set(matrices.at(-1)!)
+		if (matrices.length === 1) return m
+
+		for (let i = matrices.length - 2; i >= 0; i--) {
+			Mat4.mulImpl(swap, matrices[i]!, m)
+			m.set(swap)
+		}
+		return m
+	}
+
+	static extractBasis = (v1: Vec3, v2: Vec3, v3: Vec3, a: Mat4) => {
+		v1.set(a._11, a._21, a._31)
+		v2.set(a._12, a._22, a._32)
+		v3.set(a._13, a._23, a._33)
+	}
+	extractBasis = (v1: Vec3, v2: Vec3, v3: Vec3) => Mat4.extractBasis(v1, v2, v3, this)
+
+	static lookAt = (m: Mat4, eye: Vec3, target: Vec3, up: Vec3) => {
+		const z = Vec3.subtract(null, eye, target).normalize()
+		const x = Vec3.cross(null, up, z).normalize()
+		const y = Vec3.cross(null, z, x).normalize()
 
 		// prettier-ignore
-		return new Mat4([
+		m.set(
 			x.x, x.y, x.z, -Vec3.dot(x, eye),
 			y.x, y.y, y.z, -Vec3.dot(y, eye),
 			z.x, z.y, z.z, -Vec3.dot(z, eye),
-			0,   0,   0,   1,
-		])
+			0,   0,   0,    1,
+		)
+		return m
 	}
-
-	static makeOrthographic = (left: number, right: number, top: number, bottom: number, near: number, far: number) =>
-		// prettier-ignore
-		new Mat4([
-			2 / (right - left), 0,                  0,                -(right + left) / (right - left),
-			0,                  2 / (top - bottom), 0,                -(top + bottom) / (top - bottom),
-			0,                  0,                  2 / (near - far),  (far + near) / (far - near),
-			0,                  0,                  0,                 1,
-		])
-
-	static makePerspective = (fovX: number, aspect: number, near: number) => {
-		const f = 1 / Math.tan(degToRad(fovX) / 2)
-		// prettier-ignore
-		return new Mat4([
-			f, 0,           0, 0,
-			0, f * aspect,  0, 0,
-			0, 0,           0, near,
-			0, 0,          -1, 0,
-		])
-	}
-
-	static makeTranslation: MakeTranslation = (xOrXyz: number | Coord3d, y?: number, z?: number) => {
-		let xP = typeof xOrXyz === `number` ? xOrXyz : xOrXyz[0]
-		let yP = typeof xOrXyz === `number` ? y! : xOrXyz[1]
-		let zP = typeof xOrXyz === `number` ? z! : xOrXyz[2]
-
-		// prettier-ignore
-		return new Mat4([
-			1, 0, 0, xP,
-			0, 1, 0, yP,
-			0, 0, 1, zP,
-			0, 0, 0, 1,
-		])
-	}
-
-	private static mulImpl = (a: Mat4, b: Mat4) => {
-		const aE = a._elements
-		const bE = b._elements
-
-		return new Mat4([
-			aE[0] * bE[0] + aE[4] * bE[1] + aE[8] * bE[2] + aE[12] * bE[3],
-			aE[0] * bE[4] + aE[4] * bE[5] + aE[8] * bE[6] + aE[12] * bE[7],
-			aE[0] * bE[8] + aE[4] * bE[9] + aE[8] * bE[10] + aE[12] * bE[11],
-			aE[0] * bE[12] + aE[4] * bE[13] + aE[8] * bE[14] + aE[12] * bE[15],
-
-			aE[1] * bE[0] + aE[5] * bE[1] + aE[9] * bE[2] + aE[13] * bE[3],
-			aE[1] * bE[4] + aE[5] * bE[5] + aE[9] * bE[6] + aE[13] * bE[7],
-			aE[1] * bE[8] + aE[5] * bE[9] + aE[9] * bE[10] + aE[13] * bE[11],
-			aE[1] * bE[12] + aE[5] * bE[13] + aE[9] * bE[14] + aE[13] * bE[15],
-
-			aE[2] * bE[0] + aE[6] * bE[1] + aE[10] * bE[2] + aE[14] * bE[3],
-			aE[2] * bE[4] + aE[6] * bE[5] + aE[10] * bE[6] + aE[14] * bE[7],
-			aE[2] * bE[8] + aE[6] * bE[9] + aE[10] * bE[10] + aE[14] * bE[11],
-			aE[2] * bE[12] + aE[6] * bE[13] + aE[10] * bE[14] + aE[14] * bE[15],
-
-			aE[3] * bE[0] + aE[7] * bE[1] + aE[11] * bE[2] + aE[15] * bE[3],
-			aE[3] * bE[4] + aE[7] * bE[5] + aE[11] * bE[6] + aE[15] * bE[7],
-			aE[3] * bE[8] + aE[7] * bE[9] + aE[11] * bE[10] + aE[15] * bE[11],
-			aE[3] * bE[12] + aE[7] * bE[13] + aE[11] * bE[14] + aE[15] * bE[15],
-		])
-	}
-
-	static mul = (...matrices: Mat4[]) => {
-		if (matrices.length === 0) return new Mat4()
-		if (matrices.length === 1) return matrices[0]!
-
-		let result = matrices.at(-1)!
-		for (let i = matrices.length - 2; i >= 0; i--) result = Mat4.mulImpl(matrices[i]!, result)
-		return result
-	}
-
-	static mulScalar = (mat: Mat4, s: number) => new Mat4(mat._elements.map((e) => e * s) as Mat4Elements)
-
-	// The constructor already transposes the input so we don't need to do anything here.
-	static transpose = (mat: Mat4) => new Mat4(mat._elements)
+	lookAt = (eye: Vec3, target: Vec3, up: Vec3) => Mat4.lookAt(this, eye, target, up)
 }
 
-type MakeTranslation = {
-	(x: number, y: number, z: number): Mat4
-	(xyz: Coord3d): Mat4
-}
+// Certain operations necessitate a temporary matrix to store intermediate results.
+const swap = new Mat4()

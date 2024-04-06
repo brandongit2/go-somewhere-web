@@ -1,5 +1,5 @@
 import {type VectorTileFeature} from "@mapbox/vector-tile"
-import {type Opaque} from "type-fest"
+import {type Opaque, type Promisable} from "type-fest"
 
 export type Coord2d = [number, number]
 
@@ -16,6 +16,12 @@ export type MapLayerFeature = {
 	id: number
 	properties: Record<string, string | number | boolean>
 	geometry: MercatorCoord[][]
+}
+
+export type MapObject = {
+	children?: MapObject[]
+	preDraw?: () => Promisable<void>
+	draw?: (pass: GPURenderPassEncoder) => void
 }
 
 export type MapTileType = {

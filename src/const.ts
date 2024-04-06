@@ -1,6 +1,5 @@
 export const fovX = 75
 
-export const TWO_BYTES_PER_FLOAT16 = 2
 export const TWO_BYTES_PER_INT16 = 2
 export const FOUR_BYTES_PER_FLOAT32 = 4
 export const FOUR_BYTES_PER_INT32 = 4
