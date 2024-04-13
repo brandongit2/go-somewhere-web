@@ -47,7 +47,7 @@ const MapImpl = () => {
 			}}
 			onWheel={(event) => {
 				if (!map.current) return
-				map.current.setZoom(map.current.zoom - event.deltaY / 100)
+				map.current.setZoom((zoom) => zoom - event.deltaY / 50)
 			}}
 		/>
 	)

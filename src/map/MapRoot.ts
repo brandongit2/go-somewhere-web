@@ -112,30 +112,29 @@ export class MapRoot {
 	}
 
 	resize = (width: number, height: number) => {
-		const {
-			beforeNextRender,
-			canvas,
-			canvas: {depthTexture: oldDepthTexture, device, setMapSize},
-		} = this
+		this.beforeNextRender[0] = () => {
+			const {
+				canvas,
+				canvas: {depthTexture: oldDepthTexture, device, setMapSize},
+			} = this
 
-		const {mapWidth, mapHeight} = setMapSize(width, height)
+			const {mapWidth, mapHeight} = setMapSize(width, height)
+			this.camera.updateProjectionMatrix()
 
-		canvas.depthTexture = getDepthTexture(device, mapWidth, mapHeight)
-		beforeNextRender.push(() => {
+			canvas.depthTexture = getDepthTexture(device, mapWidth, mapHeight)
 			oldDepthTexture.destroy()
-		})
+		}
 	}
 
-	zoomChangeAmt = 0
-	setZoom = (newZoom: number) => {
-		const {beforeNextRender, zoom, zoomChangeAmt} = this
+	tempZoom = 0
+	setZoom = (calc: (zoom: number) => number) => {
+		const {beforeNextRender} = this
 
-		this.zoomChangeAmt += newZoom - zoom
-
-		beforeNextRender.push(() => {
-			this.zoom = clamp(zoom + zoomChangeAmt, 0, 18)
-			this.zoomChangeAmt = 0
-		})
+		this.tempZoom = calc(this.tempZoom)
+		beforeNextRender[1] = () => {
+			this.zoom = clamp(this.tempZoom, 0, 18)
+			this.tempZoom = this.zoom
+		}
 	}
 }
 

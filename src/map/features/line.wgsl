@@ -20,5 +20,5 @@ struct VertexOutput {
 		discard;
 	}
 
-	return vec4f(color, 1.0);
+	return vec4f(color, 0.5);
 }

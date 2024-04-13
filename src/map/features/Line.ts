@@ -25,7 +25,7 @@ export class Line implements MapObject {
 	private viewPoint: WorldCoord | undefined
 
 	indexBuffer: GPUBuffer | undefined
-	indicesSize: number | undefined
+	numIndices: number | undefined
 	vertexBuffer: GPUBuffer | undefined
 	uvBuffer: GPUBuffer | undefined
 	colorBuffer: GPUBuffer
@@ -141,7 +141,7 @@ export class Line implements MapObject {
 	}
 
 	draw = (pass: GPURenderPassEncoder) => {
-		if (!this.indexBuffer || !this.vertexBuffer || !this.uvBuffer || !this.indicesSize) return
+		if (!this.indexBuffer || !this.vertexBuffer || !this.uvBuffer || !this.numIndices) return
 
 		pass.setPipeline(this.renderPipeline)
 		pass.setBindGroup(0, this.bindGroup)
@@ -149,7 +149,7 @@ export class Line implements MapObject {
 		pass.setIndexBuffer(this.indexBuffer, `uint32`)
 		pass.setVertexBuffer(0, this.vertexBuffer)
 		pass.setVertexBuffer(1, this.uvBuffer)
-		pass.drawIndexed(this.indicesSize / FOUR_BYTES_PER_INT32)
+		pass.drawIndexed(this.numIndices)
 	}
 
 	set = async (args: LineArgs) => {
@@ -211,18 +211,19 @@ export class Line implements MapObject {
 			viewPoint: this.viewPoint,
 			thickness: this.thickness,
 		}
-		const {buffer, indicesSize, verticesSize, uvsSize} = await dispatchToWorker(`linestringsToMesh`, workerArgs)
-		this.indicesSize = indicesSize
-		const indices = new Uint32Array(buffer, 0, indicesSize / FOUR_BYTES_PER_INT32)
-		const vertices = new Float32Array(buffer, indicesSize, verticesSize / FOUR_BYTES_PER_FLOAT32)
-		const uvs = new Float32Array(buffer, indicesSize + verticesSize, uvsSize / FOUR_BYTES_PER_FLOAT32)
+		const {buffer, indicesOffset, indicesLength, verticesOffset, verticesLength, uvsOffset, uvsLength} =
+			await dispatchToWorker(`linestringsToMesh`, workerArgs)
+		this.numIndices = indicesLength
+		const indices = new Uint32Array(buffer, indicesOffset, indicesLength)
+		const vertices = new Float32Array(buffer, verticesOffset, verticesLength)
+		const uvs = new Float32Array(buffer, uvsOffset, uvsLength)
 
 		const {device} = this.map.canvas
 
-		if (!this.indexBuffer || this.indexBuffer.size < indicesSize) {
+		if (!this.indexBuffer || this.indexBuffer.size < indicesLength * FOUR_BYTES_PER_INT32) {
 			this.indexBuffer = device.createBuffer({
 				label: `line index buffer`,
-				size: indicesSize,
+				size: indicesLength * FOUR_BYTES_PER_INT32,
 				usage: GPUBufferUsage.INDEX | GPUBufferUsage.COPY_DST,
 			})
 
@@ -230,10 +231,10 @@ export class Line implements MapObject {
 		}
 		device.queue.writeBuffer(this.indexBuffer, 0, indices)
 
-		if (!this.vertexBuffer || this.vertexBuffer.size < verticesSize) {
+		if (!this.vertexBuffer || this.vertexBuffer.size < verticesLength * FOUR_BYTES_PER_FLOAT32) {
 			this.vertexBuffer = device.createBuffer({
 				label: `line vertex buffer`,
-				size: verticesSize,
+				size: verticesLength * FOUR_BYTES_PER_FLOAT32,
 				usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
 			})
 
@@ -241,10 +242,10 @@ export class Line implements MapObject {
 		}
 		device.queue.writeBuffer(this.vertexBuffer, 0, vertices)
 
-		if (!this.uvBuffer || this.uvBuffer.size < uvsSize) {
+		if (!this.uvBuffer || this.uvBuffer.size < uvsLength * FOUR_BYTES_PER_FLOAT32) {
 			this.uvBuffer = device.createBuffer({
 				label: `line uv buffer`,
-				size: uvsSize,
+				size: uvsLength * FOUR_BYTES_PER_FLOAT32,
 				usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
 			})
 

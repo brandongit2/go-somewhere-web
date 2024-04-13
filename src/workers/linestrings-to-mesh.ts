@@ -12,13 +12,16 @@ export type LinestringsToMeshArgs = {
 
 export type LinestringsToMeshReturn = {
 	buffer: ArrayBuffer
-	indicesSize: number
-	verticesSize: number
-	uvsSize: number
+	indicesOffset: number
+	indicesLength: number
+	verticesOffset: number
+	verticesLength: number
+	uvsOffset: number
+	uvsLength: number
 }
 
 // Pre-allocate a bunch of `Vec3`s to avoid creating and destroying them all the time
-const vs = Array.from({length: 15}, () => new Vec3())
+const vs = Array.from({length: 16}, () => new Vec3())
 const v0 = vs[0]!,
 	v1 = vs[1]!,
 	v2 = vs[2]!,
@@ -33,7 +36,8 @@ const v0 = vs[0]!,
 	v11 = vs[11]!,
 	v12 = vs[12]!,
 	v13 = vs[13]!,
-	v14 = vs[14]!
+	v14 = vs[14]!,
+	v15 = vs[15]!
 
 export const linestringsToMesh = ({
 	linestringsBuffer,
@@ -52,7 +56,7 @@ export const linestringsToMesh = ({
 	const indices = new Uint32Array(buffer, 0, indicesSize / FOUR_BYTES_PER_INT32)
 	const vertices = new Float32Array(buffer, indicesSize, verticesSize / FOUR_BYTES_PER_FLOAT32)
 	const uvs = new Float32Array(buffer, indicesSize + verticesSize, uvsSize / FOUR_BYTES_PER_FLOAT32)
-	const is: [number, number, number] = [0, 0, 0] // Indices offset (`ii`), vertices offset (`vi`), UVs offset (`ui`)
+	const is: [number, number, number] = [0, 0, 0] // Indices index (`ii`), vertices index (`vi`), UVs index (`ui`)
 	for (let i = 0; i < linestringsBufferSize / FOUR_BYTES_PER_FLOAT32; ) {
 		const lineLength = linestrings[i++]!
 		const linestring = linestrings.subarray(i, i + lineLength * 3)
@@ -63,9 +67,12 @@ export const linestringsToMesh = ({
 
 	const res: LinestringsToMeshReturn = {
 		buffer,
-		indicesSize,
-		verticesSize,
-		uvsSize,
+		indicesOffset: 0,
+		indicesLength: is[0],
+		verticesOffset: indicesSize,
+		verticesLength: is[1],
+		uvsOffset: indicesSize + verticesSize,
+		uvsLength: is[2],
 	}
 	postMessage(res, {transfer: [buffer]})
 }
@@ -96,23 +103,31 @@ const linestringToMesh = (
 			: Vec3.normalize(v3, viewPoint)
 
 		if (prevVertex && nextVertex) {
-			const fromPrev = oldToNext ?? Vec3.normalize(v4, Vec3.subtract(v4, currentVertex, prevVertex))
-			const toNext = Vec3.subtract(v5, nextVertex, currentVertex).normalize()
-			oldToNext = toNext
+			const fromPrev = oldToNext ? v4.set(oldToNext) : Vec3.subtract(v4, currentVertex, prevVertex).normalize()
+			const toNext = Vec3.subtract(v6, nextVertex, currentVertex).normalize()
+			oldToNext = v5.set(toNext)
 
-			const primaryPrevNormal = Vec3.cross(v6, fromPrev, faceDirection)
-			const primaryNextNormal = Vec3.cross(v7, toNext, faceDirection)
-			const primaryPrevNormalScaled = Vec3.scaleBy(v8, primaryPrevNormal, halfThickness)
-			const primaryNextNormalScaled = Vec3.scaleBy(v9, primaryNextNormal, halfThickness)
+			const primaryPrevNormal = Vec3.cross(v7, fromPrev, faceDirection)
+			const primaryNextNormal = Vec3.cross(v8, toNext, faceDirection)
+			const primaryPrevNormalScaled = Vec3.scaleBy(v9, primaryPrevNormal, halfThickness)
+			const primaryNextNormalScaled = Vec3.scaleBy(v10, primaryNextNormal, halfThickness)
 
 			const isPrimarySideOut = Vec3.dot(fromPrev, primaryNextNormal) > 0
 
 			// Rect for previous segment
-			let vi = is[1]
-			indices.set([vi, vi + 1, vi - 1, vi, vi - 1, vi - 2], is[0])
+			let vs = is[1] / 3
+			// prettier-ignore
+			indices.set([
+				vs +  0,
+				vs +  1,
+				vs + -1,
+				vs +  0,
+				vs + -1,
+				vs + -2,
+			], is[0])
 			is[0] += 6
 
-			const primaryMiterDirection = Vec3.add(v10, primaryPrevNormal, primaryNextNormal)
+			const primaryMiterDirection = Vec3.add(v11, primaryPrevNormal, primaryNextNormal)
 			const m = Vec3.lengthOf(primaryMiterDirection)
 			if (m < 0.05) {
 				// Mitre will be too long; just cap it off
@@ -121,9 +136,33 @@ const linestringToMesh = (
 				const extensionFromNext = Vec3.scaleBy(v12, toNext, -halfThickness).add(primaryNextNormalScaled)
 
 				// Rect for cap
-				vi = is[1]
-				if (isPrimarySideOut) indices.set([vi, vi + 5, vi + 2, vi, vi + 4, vi + 5, vi, vi + 3, vi + 4], is[0])
-				else indices.set([vi + 2, vi + 6, vi + 1, vi + 1, vi + 6, vi + 3, vi + 1, vi + 3, vi + 4], is[0])
+				vs = is[1] / 3
+				if (isPrimarySideOut)
+					// prettier-ignore
+					indices.set([
+						vs + 0,
+						vs + 5,
+						vs + 2,
+						vs + 0,
+						vs + 4,
+						vs + 5,
+						vs + 0,
+						vs + 3,
+						vs + 4,
+					], is[0])
+				else
+					// prettier-ignore
+					indices.set([
+						vs + 2,
+						vs + 6,
+						vs + 1,
+						vs + 1,
+						vs + 6,
+						vs + 3,
+						vs + 1,
+						vs + 3,
+						vs + 4,
+					], is[0])
 				is[0] += 9
 
 				vertices.set(
@@ -136,9 +175,9 @@ const linestringToMesh = (
 						...Vec3.add(v13, currentVertex, primaryNextNormalScaled),
 						...Vec3.subtract(v13, currentVertex, primaryNextNormalScaled),
 					],
-					is[1] * 3,
+					is[1],
 				)
-				is[1] += 7
+				is[1] += 7 * 3
 
 				// The basis vectors for UV space are u = `fromPrev` and v = `-primaryPrevNormal`.
 				const uPrimaryPrevNormal = 0
@@ -146,55 +185,67 @@ const linestringToMesh = (
 				const uPrimaryNextNormal = Vec3.dot(primaryNextNormal, fromPrev)
 				const vPrimaryNextNormal = -Vec3.dot(primaryNextNormal, primaryPrevNormal)
 				uvs.set(
+					// prettier-ignore
 					[
-						uPrimaryPrevNormal,
-						vPrimaryPrevNormal,
-						-uPrimaryPrevNormal,
-						-vPrimaryPrevNormal,
-						0,
-						0,
-						1,
-						-1,
-						Vec3.dot(extensionFromNext, fromPrev) / halfThickness,
-						-Vec3.dot(extensionFromNext, primaryPrevNormal) / halfThickness,
-						uPrimaryNextNormal,
-						vPrimaryNextNormal,
-						-uPrimaryNextNormal,
-						-vPrimaryNextNormal,
+						uPrimaryPrevNormal, vPrimaryPrevNormal,
+						-uPrimaryPrevNormal, -vPrimaryPrevNormal,
+						0, 0,
+						1, -1,
+						Vec3.dot(extensionFromNext, fromPrev) / halfThickness, -Vec3.dot(extensionFromNext, primaryPrevNormal) / halfThickness,
+						uPrimaryNextNormal, vPrimaryNextNormal,
+						-uPrimaryNextNormal, -vPrimaryNextNormal,
 					],
 					is[2],
 				)
-				is[2] += 14
+				is[2] += 7 * 2
 
 				continue
 			}
 			Vec3.scaleBy(primaryMiterDirection, primaryMiterDirection, 1 / m)
 
-			const primaryMiterNormal = Vec3.cross(v11, primaryMiterDirection, faceDirection)
+			const primaryMiterNormal = Vec3.cross(v12, primaryMiterDirection, faceDirection)
 
 			let miterLength = 1 / Vec3.dot(primaryPrevNormal, primaryMiterDirection)
 			if (!isPrimarySideOut) miterLength *= -1
-			const outerMiter = Vec3.scaleBy(v12, primaryMiterDirection, miterLength)
-			const outerMiterScaled = Vec3.scaleBy(v13, outerMiter, halfThickness)
+			const outerMiter = Vec3.scaleBy(v13, primaryMiterDirection, miterLength)
+			const outerMiterScaled = Vec3.scaleBy(v14, outerMiter, halfThickness)
 
 			// Rect for mitre
-			vi = is[1]
-			if (isPrimarySideOut) indices.set([vi + 2, vi, vi + 3, vi + 2, vi + 3, vi + 4], is[0])
-			else indices.set([vi + 2, vi + 3, vi + 1, vi + 2, vi + 5, vi + 3], is[0])
+			vs = is[1] / 3
+			if (isPrimarySideOut)
+				// prettier-ignore
+				indices.set([
+					vs + 2,
+					vs + 0,
+					vs + 3,
+					vs + 2,
+					vs + 3,
+					vs + 4,
+				], is[0])
+			else
+				// prettier-ignore
+				indices.set([
+					vs + 2,
+					vs + 3,
+					vs + 1,
+					vs + 2,
+					vs + 5,
+					vs + 3,
+				], is[0])
 			is[0] += 6
 
 			vertices.set(
 				[
-					...Vec3.add(v14, currentVertex, primaryPrevNormalScaled),
-					...Vec3.subtract(v14, currentVertex, primaryPrevNormalScaled),
+					...Vec3.add(v15, currentVertex, primaryPrevNormalScaled),
+					...Vec3.subtract(v15, currentVertex, primaryPrevNormalScaled),
 					...currentVertex,
-					...Vec3.add(v14, currentVertex, outerMiterScaled),
-					...Vec3.add(v14, currentVertex, primaryNextNormalScaled),
-					...Vec3.subtract(v14, currentVertex, primaryNextNormalScaled),
+					...Vec3.add(v15, currentVertex, outerMiterScaled),
+					...Vec3.add(v15, currentVertex, primaryNextNormalScaled),
+					...Vec3.subtract(v15, currentVertex, primaryNextNormalScaled),
 				],
-				is[1] * 3,
+				is[1],
 			)
-			is[1] += 6
+			is[1] += 6 * 3
 
 			// The basis vectors for UV space are u = `primaryMiterDirection` and v = `primaryMiterNormal`.
 			const uPrimaryPrevNormal = Vec3.dot(primaryPrevNormal, primaryMiterDirection)
@@ -202,25 +253,20 @@ const linestringToMesh = (
 			const uPrimaryNextNormal = Vec3.dot(primaryNextNormal, primaryMiterDirection)
 			const vPrimaryNextNormal = Vec3.dot(primaryNextNormal, primaryMiterNormal)
 			uvs.set(
+				// prettier-ignore
 				[
-					uPrimaryPrevNormal,
-					vPrimaryPrevNormal,
-					-uPrimaryPrevNormal,
-					-vPrimaryPrevNormal,
-					0,
-					0,
-					Vec3.dot(outerMiter, primaryMiterDirection),
-					Vec3.dot(outerMiter, primaryMiterNormal),
-					uPrimaryNextNormal,
-					vPrimaryNextNormal,
-					-uPrimaryNextNormal,
-					-vPrimaryNextNormal,
+					uPrimaryPrevNormal, vPrimaryPrevNormal,
+					-uPrimaryPrevNormal, -vPrimaryPrevNormal,
+					0, 0,
+					Vec3.dot(outerMiter, primaryMiterDirection), Vec3.dot(outerMiter, primaryMiterNormal),
+					uPrimaryNextNormal, vPrimaryNextNormal,
+					-uPrimaryNextNormal, -vPrimaryNextNormal,
 				],
 				is[2],
 			)
-			is[2] += 12
+			is[2] += 6 * 2
 		} else if (prevVertex) {
-			const fromPrev = oldToNext ?? Vec3.subtract(v4, currentVertex, prevVertex).normalize()
+			const fromPrev = oldToNext ? v4.set(oldToNext) : Vec3.subtract(v4, currentVertex, prevVertex).normalize()
 
 			const primaryPrevNormal = Vec3.cross(v5, fromPrev, faceDirection)
 			const primaryPrevNormalScaled = Vec3.scaleBy(v5, primaryPrevNormal, halfThickness)
@@ -228,11 +274,11 @@ const linestringToMesh = (
 			const extension = Vec3.scaleBy(v6, fromPrev, halfThickness)
 			const currentVertexExtended = Vec3.add(v6, currentVertex, extension)
 
-			const vi = is[1]
+			const vi = is[1] / 3
 			// prettier-ignore
 			indices.set([
-				vi, vi - 1, vi - 2, vi, vi + 1, vi - 1, // Rect for previous segment
-				vi, vi + 3, vi + 1, vi, vi + 2, vi + 3, // Rect for cap extension
+				vi + 0, vi + -1, vi + -2, vi + 0, vi + 1, vi + -1, // Rect for previous segment
+				vi + 0, vi +  3, vi +  1, vi + 0, vi + 2, vi +  3, // Rect for cap extension
 			], is[0])
 			is[0] += 12
 			vertices.set(
@@ -242,35 +288,44 @@ const linestringToMesh = (
 					...Vec3.add(v7, currentVertexExtended, primaryPrevNormalScaled),
 					...Vec3.subtract(v7, currentVertexExtended, primaryPrevNormalScaled),
 				],
-				vi * 3,
+				is[1],
 			)
-			is[1] += 4
+			is[1] += 4 * 3
 			uvs.set([1, 0, -1, 0, 1, 1, -1, 1], is[2])
-			is[2] += 8
+			is[2] += 4 * 2
 		} else if (nextVertex) {
 			const toNext = Vec3.subtract(v4, nextVertex, currentVertex).normalize()
+			oldToNext = v5.set(toNext)
 
-			const primaryNextNormal = Vec3.cross(v5, toNext, faceDirection)
-			const primaryNextNormalScaled = Vec3.scaleBy(v5, primaryNextNormal, halfThickness)
+			const primaryNextNormal = Vec3.cross(v6, toNext, faceDirection)
+			const primaryNextNormalScaled = Vec3.scaleBy(v6, primaryNextNormal, halfThickness)
 
-			const extension = Vec3.scaleBy(v6, toNext, -halfThickness)
-			const currentVertexExtended = Vec3.add(v6, currentVertex, extension)
+			const extension = Vec3.scaleBy(v7, toNext, -halfThickness)
+			const currentVertexExtended = Vec3.add(v7, currentVertex, extension)
 
-			const vi = is[1]
-			indices.set([vi, vi + 3, vi + 1, vi, vi + 2, vi + 3], is[0])
+			const vi = is[1] / 3
+			// prettier-ignore
+			indices.set([
+				vi + 0,
+				vi + 3,
+				vi + 1,
+				vi + 0,
+				vi + 2,
+				vi + 3,
+			], is[0])
 			is[0] += 6
 			vertices.set(
 				[
-					...Vec3.add(v7, currentVertexExtended, primaryNextNormalScaled),
-					...Vec3.subtract(v7, currentVertexExtended, primaryNextNormalScaled),
-					...Vec3.add(v7, currentVertex, primaryNextNormalScaled),
-					...Vec3.subtract(v7, currentVertex, primaryNextNormalScaled),
+					...Vec3.add(v8, currentVertexExtended, primaryNextNormalScaled),
+					...Vec3.subtract(v8, currentVertexExtended, primaryNextNormalScaled),
+					...Vec3.add(v8, currentVertex, primaryNextNormalScaled),
+					...Vec3.subtract(v8, currentVertex, primaryNextNormalScaled),
 				],
-				vi * 3,
+				is[1],
 			)
-			is[1] += 4
+			is[1] += 4 * 3
 			uvs.set([1, -1, -1, -1, 1, 0, -1, 0], is[2])
-			is[2] += 8
+			is[2] += 4 * 2
 		} else {
 			const axis = v4.set(0, halfThickness, 0)
 			const radius1 = Vec3.cross(v5, faceDirection, axis)
@@ -278,8 +333,16 @@ const linestringToMesh = (
 			const extrusion1 = Vec3.add(v7, currentVertex, radius1)
 			const extrusion2 = Vec3.subtract(v8, currentVertex, radius1)
 
-			const vi = is[1]
-			indices.set([vi, vi + 3, vi + 2, vi, vi + 1, vi + 3], is[0])
+			const vi = is[1] / 3
+			// prettier-ignore
+			indices.set([
+				vi + 0,
+				vi + 3,
+				vi + 2,
+				vi + 0,
+				vi + 1,
+				vi + 3,
+			], is[0])
 			is[0] += 6
 			vertices.set(
 				[
@@ -288,11 +351,11 @@ const linestringToMesh = (
 					...Vec3.subtract(v9, extrusion1, radius2),
 					...Vec3.subtract(v9, extrusion2, radius2),
 				],
-				vi * 3,
+				is[1],
 			)
-			is[1] += 4
+			is[1] += 4 * 3
 			uvs.set([1, 1, -1, 1, 1, -1, -1, -1], is[2])
-			is[2] += 8
+			is[2] += 4 * 2
 		}
 
 		oldCurrentVertex = v0.set(currentVertex)

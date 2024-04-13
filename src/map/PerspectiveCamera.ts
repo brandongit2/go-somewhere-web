@@ -11,14 +11,14 @@ export class PerspectiveCamera {
 
 	constructor(
 		private map: MapRoot,
-		fovX: number,
-		near: number,
-		far: number,
+		public fovX: number,
+		public near: number,
+		public far: number,
 		viewMatrix = new Mat4(),
 	) {
-		const {device} = map.canvas
+		const {device, mapWidth, mapHeight} = map.canvas
 
-		this.projectionMatrix = new PerspectiveMatrix(fovX, 1, near, far)
+		this.projectionMatrix = new PerspectiveMatrix(fovX, mapWidth / mapHeight, near, far)
 		this.projectionMatrixBuffer = device.createBuffer({
 			label: `perspective camera projection matrix buffer`,
 			size: SIXTEEN_NUMBERS_PER_MAT4 * FOUR_BYTES_PER_FLOAT32,
@@ -33,6 +33,16 @@ export class PerspectiveCamera {
 			usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
 		})
 		this.updateViewMatrixBuffer()
+	}
+
+	updateProjectionMatrix = (opts?: {fovX?: number; near?: number; far?: number}) => {
+		this.projectionMatrix = new PerspectiveMatrix(
+			opts?.fovX ?? this.fovX,
+			this.map.canvas.mapWidth / this.map.canvas.mapHeight,
+			opts?.near ?? this.near,
+			opts?.far ?? this.far,
+		)
+		this.updateProjectionMatrixBuffer()
 	}
 
 	updateProjectionMatrixBuffer = () => {

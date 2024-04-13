@@ -20,7 +20,7 @@ import {
 import {degToRad, lngLatToWorld, tileToLngLat, mercatorToWorld, roughEq, groupByTwos} from "@/util"
 import {dispatchToWorker} from "@/worker-pool"
 
-const baseLineThickness = 0.005
+const baseLineThickness = 0.008
 const layerColors: Record<string, Coord3d> = {
 	water: [0.0, 0.2, 0.4],
 	admin: [0.9, 0.9, 0.9],
@@ -109,7 +109,7 @@ export class MapTile implements MapObject {
 
 	setLayers = (layers: Record<string, MapTileLayer>) => {
 		for (const [layerName, layer] of Object.entries(layers)) {
-			const lines: MercatorCoord[][] = []
+			let lines: MercatorCoord[][] = []
 			const polygons: MercatorCoord[][] = []
 			for (const feature of layer.features) {
 				let arr: MercatorCoord[][]
