@@ -1,7 +1,7 @@
-import {type Mat4} from "@/math/Mat4"
-import {type Obb} from "@/math/Obb"
-import {type PerspectiveMatrix} from "@/math/PerspectiveMatrix"
-import {Vec3} from "@/math/Vec3"
+// import {type Mat4} from "@/math/Mat4"
+// import {type Obb} from "@/math/Obb"
+// import {type PerspectiveMatrix} from "@/math/PerspectiveMatrix"
+// import {Vec3} from "@/math/Vec3"
 
 // Runs a separating-axis test between an OBB and a projection matrix frustum: https://bruop.github.io/improved_frustum_culling/
 // export const frustumObbIntersection = (projectionMatrix: PerspectiveMatrix, viewMatrix: Mat4, obb: Obb) => {
