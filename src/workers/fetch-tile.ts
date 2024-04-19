@@ -10,15 +10,15 @@ import {type MapLayerFeature, type MapTileLayer, type TileIdStr, type TileLocalC
 import {breakDownTileId, tileLocalCoordToMercator} from "@/util"
 
 export type FetchTileArgs = {
-	tileId: TileIdStr
+	id: TileIdStr
 }
 
 export type FetchTileReturn = {
 	layers: Record<string, MapTileLayer>
 }
 
-export const fetchTile = async ({tileId}: FetchTileArgs, abortController: AbortController) => {
-	const {zoom, x, y} = breakDownTileId(tileId)
+export const fetchTile = async ({id}: FetchTileArgs, abortController: AbortController) => {
+	const {zoom, x, y} = breakDownTileId(id)
 
 	const data = await wretch(`https://api.mapbox.com/v4/mapbox.mapbox-streets-v8/${zoom}/${x}/${y}.mvt`)
 		.addon(AbortAddon())

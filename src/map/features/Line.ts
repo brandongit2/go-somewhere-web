@@ -5,8 +5,8 @@ import {
 	THREE_NUMBERS_PER_3D_COORD,
 	TWO_NUMBERS_PER_2D_COORD,
 } from "@/const"
-import {type MapRoot} from "@/map/MapRoot"
 import {type Coord3d, type MapObject, type WorldCoord} from "@/types"
+import {device} from "@/webgpu"
 import {dispatchToWorker} from "@/worker-pool"
 import {type LinestringsToMeshArgs} from "@/workers/linestrings-to-mesh"
 
@@ -32,15 +32,7 @@ export class Line implements MapObject {
 	bindGroup: GPUBindGroup
 	renderPipeline: GPURenderPipeline
 
-	constructor(
-		private map: MapRoot,
-		args: LineArgs,
-	) {
-		const {
-			camera,
-			canvas: {device, presentationFormat},
-		} = map
-
+	constructor(args: LineArgs) {
 		this.colorBuffer = device.createBuffer({
 			label: `line colour buffer`,
 			size: 3 * FOUR_BYTES_PER_FLOAT32,

@@ -1,10 +1,9 @@
 import earcut from "earcut"
 
 import {PX_PER_TILE} from "@/const"
+import {type Camera} from "@/map/Camera"
 import {Line} from "@/map/features/Line"
 import {Polygon} from "@/map/features/Polygon"
-import {type MapRoot} from "@/map/MapRoot"
-import {type PerspectiveCamera} from "@/map/PerspectiveCamera"
 import {Mat4} from "@/math/Mat4"
 import {Vec3} from "@/math/Vec3"
 import {
@@ -33,12 +32,9 @@ export class MapTile implements MapObject {
 	loaded = false
 	// obb: Obb
 
-	constructor(
-		private map: MapRoot,
-		public tileId: TileIdStr,
-	) {
+	constructor(public id: TileIdStr) {
 		if (!this.loaded)
-			dispatchToWorker(`fetchTile`, {tileId}, {signal: this.abortController.signal})
+			dispatchToWorker(`fetchTile`, {id}, {signal: this.abortController.signal})
 				.then(({layers}) => {
 					this.setLayers(layers)
 				})
@@ -205,13 +201,7 @@ const isTileInView = () => {
 	return true
 }
 
-const isTileTooBig = (
-	tile: TileId,
-	camera: PerspectiveCamera,
-	cameraPos: LngLat,
-	windowWidth: number,
-	windowHeight: number,
-) => {
+const isTileTooBig = (tile: TileId, camera: Camera, cameraPos: LngLat, windowWidth: number, windowHeight: number) => {
 	let closestPointOnTile: LngLat
 	if (tile.zoom === 0) {
 		closestPointOnTile = cameraPos
